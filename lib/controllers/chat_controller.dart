@@ -3,32 +3,46 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../models/chat_message.dart';
-import '../services/local_ai_service.dart';
+import '../services/local_model_service.dart';
 
 class ChatController extends ChangeNotifier {
   ChatController({
-    LocalAiService? localAiService,
-  }) : _localAiService = localAiService ?? LocalAiService();
+    LocalModelService? localModelService,
+  }) : _localModelService = localModelService ?? LocalModelService();
 
-  final LocalAiService _localAiService;
+  final LocalModelService _localModelService;
 
   final List<ChatMessage> _messages = [];
   final ScrollController scrollController = ScrollController();
 
   File? _selectedImage;
   bool _isSending = false;
+  String? _errorMessage;
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
   File? get selectedImage => _selectedImage;
   bool get isSending => _isSending;
+  String? get errorMessage => _errorMessage;
 
   void setSelectedImage(File? image) {
     _selectedImage = image;
+    _errorMessage = null;
     notifyListeners();
   }
 
   void removeSelectedImage() {
     _selectedImage = null;
+    notifyListeners();
+  }
+
+  void showError(String message) {
+    _errorMessage = message;
+    notifyListeners();
+  }
+
+  void dismissError() {
+    if (_errorMessage == null) return;
+    _errorMessage = null;
     notifyListeners();
   }
 
@@ -42,6 +56,7 @@ class ChatController extends ChangeNotifier {
     final historySnapshot = List<ChatMessage>.from(_messages);
 
     _isSending = true;
+    _errorMessage = null;
     _messages.add(
       ChatMessage(
         text: text,
@@ -54,18 +69,24 @@ class ChatController extends ChangeNotifier {
     _scrollToBottomSoon();
 
     try {
-      final reply = await _localAiService.generateReply(
+      final response = await _localModelService.generateResponse(
         prompt: text,
         history: historySnapshot,
         hasImage: image != null,
       );
 
-      _messages.add(
-        ChatMessage(
-          text: reply,
-          isUser: false,
-        ),
-      );
+      if (response.success) {
+        _messages.add(
+          ChatMessage(
+            text: response.text,
+            isUser: false,
+          ),
+        );
+      } else if (response.errorMessage != null) {
+        _errorMessage = response.errorMessage;
+      }
+    } catch (_) {
+      _errorMessage = 'Something went wrong while generating a reply.';
     } finally {
       _isSending = false;
       notifyListeners();

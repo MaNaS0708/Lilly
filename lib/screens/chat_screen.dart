@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../controllers/chat_controller.dart';
 import '../services/image_picker_service.dart';
+import '../widgets/error_message_banner.dart';
 import '../widgets/message_input_bar.dart';
 import '../widgets/message_list.dart';
+import 'settings_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   static const String routeName = '/chat';
@@ -34,15 +36,23 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _pickFromCamera() async {
-    final File? image = await ImagePickerService.pickFromCamera();
-    if (image == null) return;
-    _chatController.setSelectedImage(image);
+    try {
+      final File? image = await ImagePickerService.pickFromCamera();
+      if (image == null) return;
+      _chatController.setSelectedImage(image);
+    } catch (e) {
+      _chatController.showError(e.toString().replaceFirst('Exception: ', ''));
+    }
   }
 
   Future<void> _pickFromGallery() async {
-    final File? image = await ImagePickerService.pickFromGallery();
-    if (image == null) return;
-    _chatController.setSelectedImage(image);
+    try {
+      final File? image = await ImagePickerService.pickFromGallery();
+      if (image == null) return;
+      _chatController.setSelectedImage(image);
+    } catch (e) {
+      _chatController.showError(e.toString().replaceFirst('Exception: ', ''));
+    }
   }
 
   void _showImageSourceSheet() {
@@ -81,6 +91,10 @@ class _ChatScreenState extends State<ChatScreen> {
     await _chatController.sendMessage(text);
   }
 
+  void _openSettings() {
+    Navigator.of(context).pushNamed(SettingsScreen.routeName);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -90,9 +104,20 @@ class _ChatScreenState extends State<ChatScreen> {
           appBar: AppBar(
             title: const Text('Vision Chat'),
             centerTitle: false,
+            actions: [
+              IconButton(
+                onPressed: _openSettings,
+                icon: const Icon(Icons.settings_rounded),
+              ),
+            ],
           ),
           body: Column(
             children: [
+              if (_chatController.errorMessage != null)
+                ErrorMessageBanner(
+                  message: _chatController.errorMessage!,
+                  onDismiss: _chatController.dismissError,
+                ),
               Expanded(
                 child: MessageList(
                   messages: _chatController.messages,

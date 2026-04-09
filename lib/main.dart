@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'screens/splash_screen.dart';
 import 'screens/chat_screen.dart';
+import 'screens/settings_screen.dart';
+import 'screens/splash_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +26,7 @@ class VisionChatApp extends StatelessWidget {
       routes: {
         SplashScreen.routeName: (_) => const SplashScreen(),
         ChatScreen.routeName: (_) => const ChatScreen(),
+        SettingsScreen.routeName: (_) => const SettingsScreen(),
       },
     );
   }
