@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../models/chat_message.dart';
 import '../services/image_picker_service.dart';
+import '../services/local_ai_service.dart';
 import '../widgets/chat_bubble.dart';
+import '../widgets/empty_chat_state.dart';
 import '../widgets/message_input_bar.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -19,6 +21,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final List<ChatMessage> _messages = [];
+  final LocalAiService _localAiService = LocalAiService();
 
   File? _selectedImage;
   bool _isSending = false;
@@ -90,6 +93,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_isSending) return;
 
     final image = _selectedImage;
+    final historySnapshot = List<ChatMessage>.from(_messages);
 
     setState(() {
       _isSending = true;
@@ -104,13 +108,18 @@ class _ChatScreenState extends State<ChatScreen> {
       _selectedImage = null;
     });
 
-    await Future<void>.delayed(const Duration(milliseconds: 700));
+    final reply = await _localAiService.generateReply(
+      prompt: text,
+      history: historySnapshot,
+      hasImage: image != null,
+    );
+
+    if (!mounted) return;
 
     setState(() {
       _messages.add(
-        const ChatMessage(
-          text:
-              'This is a placeholder assistant reply. Later we can connect your local model here.',
+        ChatMessage(
+          text: reply,
           isUser: false,
         ),
       );
@@ -129,7 +138,7 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           Expanded(
             child: _messages.isEmpty
-                ? const _EmptyState()
+                ? const EmptyChatState()
                 : ListView.builder(
                     padding: const EdgeInsets.all(16),
                     itemCount: _messages.length,
@@ -147,46 +156,6 @@ class _ChatScreenState extends State<ChatScreen> {
             onSend: _sendMessage,
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.chat_bubble_outline_rounded,
-              size: 64,
-              color: Colors.grey.shade500,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Start a new conversation',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Send text, attach an image, or do both.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 15,
-                color: Colors.grey.shade600,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
