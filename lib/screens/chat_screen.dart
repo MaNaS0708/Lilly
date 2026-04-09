@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../controllers/chat_controller.dart';
 import '../services/image_picker_service.dart';
+import '../widgets/confirm_action_dialog.dart';
 import '../widgets/error_message_banner.dart';
 import '../widgets/message_input_bar.dart';
 import '../widgets/message_list.dart';
@@ -93,6 +94,15 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _clearChat() async {
+    final shouldClear = await ConfirmActionDialog.show(
+      context,
+      title: 'Clear chat?',
+      message: 'This will remove all saved messages from this device.',
+      confirmLabel: 'Clear',
+      cancelLabel: 'Keep',
+    );
+
+    if (!shouldClear) return;
     await _chatController.clearMessages();
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsScreen extends StatefulWidget {
   static const String routeName = '/settings';
@@ -10,12 +11,45 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  static const _saveChatsKey = 'settings_save_chats';
+  static const _enableImagesKey = 'settings_enable_images';
+  static const _showDebugKey = 'settings_show_debug';
+
   bool _saveChatsLocally = true;
   bool _enableImageInput = true;
   bool _showDebugInfo = false;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    setState(() {
+      _saveChatsLocally = prefs.getBool(_saveChatsKey) ?? true;
+      _enableImageInput = prefs.getBool(_enableImagesKey) ?? true;
+      _showDebugInfo = prefs.getBool(_showDebugKey) ?? false;
+      _loading = false;
+    });
+  }
+
+  Future<void> _updateSetting(String key, bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(key, value);
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
@@ -41,10 +75,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     'Keep conversations on device for future viewing.',
                   ),
                   value: _saveChatsLocally,
-                  onChanged: (value) {
-                    setState(() {
-                      _saveChatsLocally = value;
-                    });
+                  onChanged: (value) async {
+                    setState(() => _saveChatsLocally = value);
+                    await _updateSetting(_saveChatsKey, value);
                   },
                 ),
                 const Divider(height: 1),
@@ -55,10 +88,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     'Allow camera and gallery image attachments in chat.',
                   ),
                   value: _enableImageInput,
-                  onChanged: (value) {
-                    setState(() {
-                      _enableImageInput = value;
-                    });
+                  onChanged: (value) async {
+                    setState(() => _enableImageInput = value);
+                    await _updateSetting(_enableImagesKey, value);
                   },
                 ),
                 const Divider(height: 1),
@@ -69,10 +101,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     'Helpful later when integrating the local model.',
                   ),
                   value: _showDebugInfo,
-                  onChanged: (value) {
-                    setState(() {
-                      _showDebugInfo = value;
-                    });
+                  onChanged: (value) async {
+                    setState(() => _showDebugInfo = value);
+                    await _updateSetting(_showDebugKey, value);
                   },
                 ),
               ],

@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../models/chat_message.dart';
+import '../screens/image_preview_screen.dart';
+import 'message_timestamp.dart';
 
 class ChatBubble extends StatelessWidget {
   final ChatMessage message;
@@ -11,6 +13,16 @@ class ChatBubble extends StatelessWidget {
     super.key,
     required this.message,
   });
+
+  void _openPreview(BuildContext context) {
+    if (!message.hasImage) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ImagePreviewScreen(imagePath: message.imagePath!),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +35,7 @@ class ChatBubble extends StatelessWidget {
         : Colors.white;
 
     final textColor = message.isUser ? Colors.white : Colors.black87;
+    final timestampColor = message.isUser ? Colors.white : Colors.black54;
 
     return Column(
       crossAxisAlignment: alignment,
@@ -51,26 +64,29 @@ class ChatBubble extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (message.hasImage) ...[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.file(
-                    File(message.imagePath!),
-                    width: 220,
-                    height: 180,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        width: 220,
-                        height: 180,
-                        color: Colors.black12,
-                        alignment: Alignment.center,
-                        child: const Icon(
-                          Icons.broken_image_rounded,
-                          size: 36,
-                          color: Colors.black45,
-                        ),
-                      );
-                    },
+                GestureDetector(
+                  onTap: () => _openPreview(context),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.file(
+                      File(message.imagePath!),
+                      width: 220,
+                      height: 180,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          width: 220,
+                          height: 180,
+                          color: Colors.black12,
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.broken_image_rounded,
+                            size: 36,
+                            color: Colors.black45,
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
                 if (message.hasText) const SizedBox(height: 10),
@@ -84,6 +100,10 @@ class ChatBubble extends StatelessWidget {
                     height: 1.4,
                   ),
                 ),
+              MessageTimestamp(
+                timestamp: message.createdAt,
+                color: timestampColor,
+              ),
             ],
           ),
         ),
