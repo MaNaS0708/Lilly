@@ -2,22 +2,28 @@ import 'package:flutter/material.dart';
 
 import '../models/chat_conversation.dart';
 import '../services/conversation_storage_service.dart';
+import '../services/settings_service.dart';
 
 class ConversationListController extends ChangeNotifier {
   ConversationListController({
     ConversationStorageService? storageService,
-  }) : _storageService = storageService ?? ConversationStorageService();
+    SettingsService? settingsService,
+  }) : _storageService = storageService ?? ConversationStorageService(),
+       _settingsService = settingsService ?? SettingsService();
 
   final ConversationStorageService _storageService;
+  final SettingsService _settingsService;
 
   final List<ChatConversation> _conversations = [];
   String? _selectedConversationId;
   bool _isLoading = false;
+  bool _saveChatsLocally = true;
   String? _errorMessage;
 
   List<ChatConversation> get conversations => List.unmodifiable(_conversations);
   String? get selectedConversationId => _selectedConversationId;
   bool get isLoading => _isLoading;
+  bool get saveChatsLocally => _saveChatsLocally;
   String? get errorMessage => _errorMessage;
 
   ChatConversation? get selectedConversation {
@@ -38,8 +44,15 @@ class ConversationListController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final loadedConversations = await _storageService.loadConversations();
-      final savedSelectedId = await _storageService.loadSelectedConversationId();
+      _saveChatsLocally = await _settingsService.getSaveChatsLocally();
+
+      final loadedConversations = _saveChatsLocally
+          ? await _storageService.loadConversations()
+          : <ChatConversation>[];
+
+      final savedSelectedId = _saveChatsLocally
+          ? await _storageService.loadSelectedConversationId()
+          : null;
 
       _conversations
         ..clear()
@@ -67,6 +80,24 @@ class ConversationListController extends ChangeNotifier {
     }
   }
 
+  Future<void> refreshPersistencePreference() async {
+    final previous = _saveChatsLocally;
+    _saveChatsLocally = await _settingsService.getSaveChatsLocally();
+
+    if (previous == _saveChatsLocally) {
+      notifyListeners();
+      return;
+    }
+
+    if (!_saveChatsLocally) {
+      await _storageService.clearAll();
+    } else {
+      await _persist();
+    }
+
+    notifyListeners();
+  }
+
   ChatConversation createDraftConversation() {
     final now = DateTime.now();
     return ChatConversation(
@@ -90,7 +121,7 @@ class ConversationListController extends ChangeNotifier {
   Future<void> selectConversation(String id) async {
     if (_selectedConversationId == id) return;
     _selectedConversationId = id;
-    await _storageService.saveSelectedConversationId(id);
+    await _persistSelectionOnly();
     notifyListeners();
   }
 
@@ -143,7 +174,15 @@ class ConversationListController extends ChangeNotifier {
   }
 
   Future<void> _persist() async {
-    await _storageService.saveConversations(_conversations);
-    await _storageService.saveSelectedConversationId(_selectedConversationId);
+    if (_saveChatsLocally) {
+      await _storageService.saveConversations(_conversations);
+      await _storageService.saveSelectedConversationId(_selectedConversationId);
+    }
+  }
+
+  Future<void> _persistSelectionOnly() async {
+    if (_saveChatsLocally) {
+      await _storageService.saveSelectedConversationId(_selectedConversationId);
+    }
   }
 }

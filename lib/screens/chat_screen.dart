@@ -4,13 +4,14 @@ import 'package:flutter/material.dart';
 
 import '../controllers/chat_controller.dart';
 import '../controllers/conversation_list_controller.dart';
-import '../models/chat_conversation.dart';
 import '../services/image_picker_service.dart';
+import '../services/settings_service.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/conversation_drawer.dart';
 import '../widgets/error_message_banner.dart';
 import '../widgets/message_input_bar.dart';
 import '../widgets/message_list.dart';
+import '../widgets/rename_conversation_dialog.dart';
 import 'settings_screen.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -24,8 +25,12 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
+  final SettingsService _settingsService = SettingsService();
+
   late final ChatController _chatController;
   late final ConversationListController _conversationListController;
+
+  bool _enableImageInput = true;
 
   @override
   void initState() {
@@ -36,10 +41,16 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _bootstrap() async {
+    _enableImageInput = await _settingsService.getEnableImageInput();
     await _conversationListController.load();
+
     final selected = _conversationListController.selectedConversation;
     if (selected != null) {
       _chatController.attachConversation(selected);
+    }
+
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -52,6 +63,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _pickFromCamera() async {
+    if (!_enableImageInput) {
+      _chatController.showError('Image input is disabled in settings.');
+      return;
+    }
+
     try {
       final File? image = await ImagePickerService.pickFromCamera();
       if (image == null) return;
@@ -62,6 +78,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _pickFromGallery() async {
+    if (!_enableImageInput) {
+      _chatController.showError('Image input is disabled in settings.');
+      return;
+    }
+
     try {
       final File? image = await ImagePickerService.pickFromGallery();
       if (image == null) return;
@@ -71,7 +92,23 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _refreshSettings() async {
+    final enabled = await _settingsService.getEnableImageInput();
+    if (!mounted) return;
+
+    await _conversationListController.refreshPersistencePreference();
+
+    setState(() {
+      _enableImageInput = enabled;
+    });
+  }
+
   void _showImageSourceSheet() {
+    if (!_enableImageInput) {
+      _chatController.showError('Image input is disabled in settings.');
+      return;
+    }
+
     showModalBottomSheet<void>(
       context: context,
       builder: (context) {
@@ -130,6 +167,26 @@ class _ChatScreenState extends State<ChatScreen> {
     Navigator.of(context).maybePop();
   }
 
+  Future<void> _renameConversation(String id) async {
+    final conversation = _conversationListController.conversations.firstWhere(
+      (item) => item.id == id,
+    );
+
+    final newName = await RenameConversationDialog.show(
+      context,
+      initialValue: conversation.title,
+    );
+
+    if (newName == null || newName.trim().isEmpty) return;
+
+    await _conversationListController.renameConversation(id, newName);
+
+    final selected = _conversationListController.selectedConversation;
+    if (selected != null) {
+      _chatController.attachConversation(selected);
+    }
+  }
+
   Future<void> _deleteConversation(String id) async {
     final shouldDelete = await ConfirmActionDialog.show(
       context,
@@ -172,8 +229,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _openSettings() {
-    Navigator.of(context).pushNamed(SettingsScreen.routeName);
+  Future<void> _openSettings() async {
+    await Navigator.of(context).pushNamed(SettingsScreen.routeName);
+    await _refreshSettings();
   }
 
   @override
@@ -194,6 +252,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onNewChat: _createNewChat,
             onSelectConversation: _selectConversation,
             onDeleteConversation: _deleteConversation,
+            onRenameConversation: _renameConversation,
           ),
           appBar: AppBar(
             title: Text(activeConversation?.title ?? 'Vision Chat'),
@@ -227,7 +286,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     MessageInputBar(
                       controller: _textController,
-                      selectedImage: _chatController.selectedImage,
+                      selectedImage: _enableImageInput
+                          ? _chatController.selectedImage
+                          : null,
                       isSending: _chatController.isSending,
                       onPickImage: _showImageSourceSheet,
                       onRemoveImage: _chatController.removeSelectedImage,

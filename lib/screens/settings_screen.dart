@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import '../services/settings_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   static const String routeName = '/settings';
@@ -11,9 +12,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  static const _saveChatsKey = 'settings_save_chats';
-  static const _enableImagesKey = 'settings_enable_images';
-  static const _showDebugKey = 'settings_show_debug';
+  final SettingsService _settingsService = SettingsService();
 
   bool _saveChatsLocally = true;
   bool _enableImageInput = true;
@@ -27,19 +26,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
+    final saveChats = await _settingsService.getSaveChatsLocally();
+    final enableImages = await _settingsService.getEnableImageInput();
+    final showDebug = await _settingsService.getShowDebugInfo();
 
     setState(() {
-      _saveChatsLocally = prefs.getBool(_saveChatsKey) ?? true;
-      _enableImageInput = prefs.getBool(_enableImagesKey) ?? true;
-      _showDebugInfo = prefs.getBool(_showDebugKey) ?? false;
+      _saveChatsLocally = saveChats;
+      _enableImageInput = enableImages;
+      _showDebugInfo = showDebug;
       _loading = false;
     });
-  }
-
-  Future<void> _updateSetting(String key, bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(key, value);
   }
 
   @override
@@ -77,7 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   value: _saveChatsLocally,
                   onChanged: (value) async {
                     setState(() => _saveChatsLocally = value);
-                    await _updateSetting(_saveChatsKey, value);
+                    await _settingsService.setSaveChatsLocally(value);
                   },
                 ),
                 const Divider(height: 1),
@@ -90,7 +86,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   value: _enableImageInput,
                   onChanged: (value) async {
                     setState(() => _enableImageInput = value);
-                    await _updateSetting(_enableImagesKey, value);
+                    await _settingsService.setEnableImageInput(value);
                   },
                 ),
                 const Divider(height: 1),
@@ -103,7 +99,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   value: _showDebugInfo,
                   onChanged: (value) async {
                     setState(() => _showDebugInfo = value);
-                    await _updateSetting(_showDebugKey, value);
+                    await _settingsService.setShowDebugInfo(value);
                   },
                 ),
               ],

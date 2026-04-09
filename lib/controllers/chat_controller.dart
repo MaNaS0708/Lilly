@@ -4,14 +4,19 @@ import 'package:flutter/material.dart';
 
 import '../models/chat_conversation.dart';
 import '../models/chat_message.dart';
+import '../services/conversation_title_service.dart';
 import '../services/local_model_service.dart';
 
 class ChatController extends ChangeNotifier {
   ChatController({
     LocalModelService? localModelService,
-  }) : _localModelService = localModelService ?? LocalModelService();
+    ConversationTitleService? conversationTitleService,
+  }) : _localModelService = localModelService ?? LocalModelService(),
+       _conversationTitleService =
+           conversationTitleService ?? ConversationTitleService();
 
   final LocalModelService _localModelService;
+  final ConversationTitleService _conversationTitleService;
   final ScrollController scrollController = ScrollController();
 
   ChatConversation? _conversation;
@@ -62,6 +67,7 @@ class ChatController extends ChangeNotifier {
     _conversation = current.copyWith(
       messages: const [],
       updatedAt: DateTime.now(),
+      title: 'New Chat',
     );
     notifyListeners();
   }
@@ -87,7 +93,10 @@ class ChatController extends ChangeNotifier {
 
     final updatedMessages = [...current.messages, userMessage];
     final updatedConversation = current.copyWith(
-      title: _buildConversationTitle(current.title, updatedMessages),
+      title: _conversationTitleService.buildTitle(
+        currentTitle: current.title,
+        messages: updatedMessages,
+      ),
       messages: updatedMessages,
       updatedAt: DateTime.now(),
     );
@@ -135,29 +144,6 @@ class ChatController extends ChangeNotifier {
       notifyListeners();
       _scrollToBottomSoon();
     }
-  }
-
-  String _buildConversationTitle(
-    String currentTitle,
-    List<ChatMessage> messages,
-  ) {
-    if (currentTitle != 'New Chat') return currentTitle;
-
-    final firstUserMessage = messages.cast<ChatMessage?>().firstWhere(
-      (message) => message != null && message.isUser && message.text.trim().isNotEmpty,
-      orElse: () => null,
-    );
-
-    if (firstUserMessage == null) {
-      return currentTitle;
-    }
-
-    final text = firstUserMessage.text.trim();
-    if (text.length <= 28) {
-      return text;
-    }
-
-    return '${text.substring(0, 28)}...';
   }
 
   void _scrollToBottomSoon() {
