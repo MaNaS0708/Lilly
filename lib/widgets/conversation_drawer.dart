@@ -47,7 +47,7 @@ class ConversationDrawer extends StatelessWidget {
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: onNewChat,
-                  icon: const Icon(Icons.edit_square_rounded),
+                  icon: const Icon(Icons.add_comment_rounded),
                   label: const Text('New Chat'),
                 ),
               ),
