@@ -1,17 +1,39 @@
-import '../models/chat_conversation.dart';
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/chat_message.dart';
 
 class ChatStorageService {
-  Future<void> saveConversation(ChatConversation conversation) async {
-    // Placeholder for SharedPreferences, Hive, Isar, or SQLite.
-    await Future<void>.delayed(const Duration(milliseconds: 100));
+  static const String _messagesKey = 'chat_messages';
+
+  Future<void> saveMessages(List<ChatMessage> messages) async {
+    final prefs = await SharedPreferences.getInstance();
+    final payload = messages.map((message) => message.toMap()).toList();
+    await prefs.setString(_messagesKey, jsonEncode(payload));
   }
 
-  Future<List<ChatConversation>> loadConversations() async {
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-    return const [];
+  Future<List<ChatMessage>> loadMessages() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_messagesKey);
+
+    if (raw == null || raw.isEmpty) {
+      return [];
+    }
+
+    final decoded = jsonDecode(raw);
+    if (decoded is! List) {
+      return [];
+    }
+
+    return decoded
+        .whereType<Map>()
+        .map((item) => ChatMessage.fromMap(Map<String, dynamic>.from(item)))
+        .toList();
   }
 
-  Future<void> clearAll() async {
-    await Future<void>.delayed(const Duration(milliseconds: 100));
+  Future<void> clearMessages() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_messagesKey);
   }
 }

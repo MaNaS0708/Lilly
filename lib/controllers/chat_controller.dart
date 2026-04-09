@@ -3,26 +3,50 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../models/chat_message.dart';
+import '../services/chat_storage_service.dart';
 import '../services/local_model_service.dart';
 
 class ChatController extends ChangeNotifier {
   ChatController({
     LocalModelService? localModelService,
-  }) : _localModelService = localModelService ?? LocalModelService();
+    ChatStorageService? chatStorageService,
+  }) : _localModelService = localModelService ?? LocalModelService(),
+       _chatStorageService = chatStorageService ?? ChatStorageService();
 
   final LocalModelService _localModelService;
+  final ChatStorageService _chatStorageService;
 
   final List<ChatMessage> _messages = [];
   final ScrollController scrollController = ScrollController();
 
   File? _selectedImage;
   bool _isSending = false;
+  bool _isLoadingHistory = false;
   String? _errorMessage;
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
   File? get selectedImage => _selectedImage;
   bool get isSending => _isSending;
+  bool get isLoadingHistory => _isLoadingHistory;
   String? get errorMessage => _errorMessage;
+
+  Future<void> loadMessages() async {
+    _isLoadingHistory = true;
+    notifyListeners();
+
+    try {
+      final savedMessages = await _chatStorageService.loadMessages();
+      _messages
+        ..clear()
+        ..addAll(savedMessages);
+    } catch (_) {
+      _errorMessage = 'Could not load previous messages.';
+    } finally {
+      _isLoadingHistory = false;
+      notifyListeners();
+      _scrollToBottomSoon();
+    }
+  }
 
   void setSelectedImage(File? image) {
     _selectedImage = image;
@@ -46,6 +70,12 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> clearMessages() async {
+    _messages.clear();
+    await _chatStorageService.clearMessages();
+    notifyListeners();
+  }
+
   Future<void> sendMessage(String rawText) async {
     final text = rawText.trim();
 
@@ -61,12 +91,14 @@ class ChatController extends ChangeNotifier {
       ChatMessage(
         text: text,
         isUser: true,
-        imageFile: image,
+        imagePath: image?.path,
+        createdAt: DateTime.now(),
       ),
     );
     _selectedImage = null;
     notifyListeners();
     _scrollToBottomSoon();
+    await _persistMessages();
 
     try {
       final response = await _localModelService.generateResponse(
@@ -80,8 +112,10 @@ class ChatController extends ChangeNotifier {
           ChatMessage(
             text: response.text,
             isUser: false,
+            createdAt: DateTime.now(),
           ),
         );
+        await _persistMessages();
       } else if (response.errorMessage != null) {
         _errorMessage = response.errorMessage;
       }
@@ -91,6 +125,14 @@ class ChatController extends ChangeNotifier {
       _isSending = false;
       notifyListeners();
       _scrollToBottomSoon();
+    }
+  }
+
+  Future<void> _persistMessages() async {
+    try {
+      await _chatStorageService.saveMessages(_messages);
+    } catch (_) {
+      _errorMessage = 'Could not save chat history locally.';
     }
   }
 

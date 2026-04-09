@@ -26,6 +26,14 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+
+	<key>NSCameraUsageDescription</key>
+	<string>Lilly needs camera access so you can attach photos in chat.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Lilly needs photo library access so you can choose images in chat.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Lilly may need photo library access when working with selected images.</string>
+
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -26,6 +26,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _chatController = ChatController();
+    _chatController.loadMessages();
   }
 
   @override
@@ -91,6 +92,10 @@ class _ChatScreenState extends State<ChatScreen> {
     await _chatController.sendMessage(text);
   }
 
+  Future<void> _clearChat() async {
+    await _chatController.clearMessages();
+  }
+
   void _openSettings() {
     Navigator.of(context).pushNamed(SettingsScreen.routeName);
   }
@@ -106,6 +111,10 @@ class _ChatScreenState extends State<ChatScreen> {
             centerTitle: false,
             actions: [
               IconButton(
+                onPressed: _clearChat,
+                icon: const Icon(Icons.delete_outline_rounded),
+              ),
+              IconButton(
                 onPressed: _openSettings,
                 icon: const Icon(Icons.settings_rounded),
               ),
@@ -119,11 +128,13 @@ class _ChatScreenState extends State<ChatScreen> {
                   onDismiss: _chatController.dismissError,
                 ),
               Expanded(
-                child: MessageList(
-                  messages: _chatController.messages,
-                  scrollController: _chatController.scrollController,
-                  isLoading: _chatController.isSending,
-                ),
+                child: _chatController.isLoadingHistory
+                    ? const Center(child: CircularProgressIndicator())
+                    : MessageList(
+                        messages: _chatController.messages,
+                        scrollController: _chatController.scrollController,
+                        isLoading: _chatController.isSending,
+                      ),
               ),
               MessageInputBar(
                 controller: _textController,
