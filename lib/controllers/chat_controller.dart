@@ -2,50 +2,35 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../models/chat_conversation.dart';
 import '../models/chat_message.dart';
-import '../services/chat_storage_service.dart';
 import '../services/local_model_service.dart';
 
 class ChatController extends ChangeNotifier {
   ChatController({
     LocalModelService? localModelService,
-    ChatStorageService? chatStorageService,
-  }) : _localModelService = localModelService ?? LocalModelService(),
-       _chatStorageService = chatStorageService ?? ChatStorageService();
+  }) : _localModelService = localModelService ?? LocalModelService();
 
   final LocalModelService _localModelService;
-  final ChatStorageService _chatStorageService;
-
-  final List<ChatMessage> _messages = [];
   final ScrollController scrollController = ScrollController();
 
+  ChatConversation? _conversation;
   File? _selectedImage;
   bool _isSending = false;
-  bool _isLoadingHistory = false;
   String? _errorMessage;
 
-  List<ChatMessage> get messages => List.unmodifiable(_messages);
+  ChatConversation? get conversation => _conversation;
+  List<ChatMessage> get messages => _conversation?.messages ?? const [];
   File? get selectedImage => _selectedImage;
   bool get isSending => _isSending;
-  bool get isLoadingHistory => _isLoadingHistory;
   String? get errorMessage => _errorMessage;
 
-  Future<void> loadMessages() async {
-    _isLoadingHistory = true;
+  void attachConversation(ChatConversation conversation) {
+    _conversation = conversation;
+    _selectedImage = null;
+    _errorMessage = null;
     notifyListeners();
-
-    try {
-      final savedMessages = await _chatStorageService.loadMessages();
-      _messages
-        ..clear()
-        ..addAll(savedMessages);
-    } catch (_) {
-      _errorMessage = 'Could not load previous messages.';
-    } finally {
-      _isLoadingHistory = false;
-      notifyListeners();
-      _scrollToBottomSoon();
-    }
+    _scrollToBottomSoon();
   }
 
   void setSelectedImage(File? image) {
@@ -70,35 +55,49 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> clearMessages() async {
-    _messages.clear();
-    await _chatStorageService.clearMessages();
+  void clearActiveConversation() {
+    final current = _conversation;
+    if (current == null) return;
+
+    _conversation = current.copyWith(
+      messages: const [],
+      updatedAt: DateTime.now(),
+    );
     notifyListeners();
   }
 
-  Future<void> sendMessage(String rawText) async {
+  Future<ChatConversation?> sendMessage(String rawText) async {
+    final current = _conversation;
+    if (current == null) return null;
+
     final text = rawText.trim();
 
-    if (_isSending) return;
-    if (text.isEmpty && _selectedImage == null) return;
+    if (_isSending) return null;
+    if (text.isEmpty && _selectedImage == null) return null;
 
     final image = _selectedImage;
-    final historySnapshot = List<ChatMessage>.from(_messages);
+    final historySnapshot = List<ChatMessage>.from(current.messages);
 
+    final userMessage = ChatMessage(
+      text: text,
+      isUser: true,
+      imagePath: image?.path,
+      createdAt: DateTime.now(),
+    );
+
+    final updatedMessages = [...current.messages, userMessage];
+    final updatedConversation = current.copyWith(
+      title: _buildConversationTitle(current.title, updatedMessages),
+      messages: updatedMessages,
+      updatedAt: DateTime.now(),
+    );
+
+    _conversation = updatedConversation;
+    _selectedImage = null;
     _isSending = true;
     _errorMessage = null;
-    _messages.add(
-      ChatMessage(
-        text: text,
-        isUser: true,
-        imagePath: image?.path,
-        createdAt: DateTime.now(),
-      ),
-    );
-    _selectedImage = null;
     notifyListeners();
     _scrollToBottomSoon();
-    await _persistMessages();
 
     try {
       final response = await _localModelService.generateResponse(
@@ -108,19 +107,29 @@ class ChatController extends ChangeNotifier {
       );
 
       if (response.success) {
-        _messages.add(
-          ChatMessage(
-            text: response.text,
-            isUser: false,
-            createdAt: DateTime.now(),
-          ),
+        final replyMessage = ChatMessage(
+          text: response.text,
+          isUser: false,
+          createdAt: DateTime.now(),
         );
-        await _persistMessages();
-      } else if (response.errorMessage != null) {
+
+        final conversationWithReply = _conversation!.copyWith(
+          messages: [..._conversation!.messages, replyMessage],
+          updatedAt: DateTime.now(),
+        );
+
+        _conversation = conversationWithReply;
+        return conversationWithReply;
+      }
+
+      if (response.errorMessage != null) {
         _errorMessage = response.errorMessage;
       }
+
+      return _conversation;
     } catch (_) {
       _errorMessage = 'Something went wrong while generating a reply.';
+      return _conversation;
     } finally {
       _isSending = false;
       notifyListeners();
@@ -128,12 +137,27 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  Future<void> _persistMessages() async {
-    try {
-      await _chatStorageService.saveMessages(_messages);
-    } catch (_) {
-      _errorMessage = 'Could not save chat history locally.';
+  String _buildConversationTitle(
+    String currentTitle,
+    List<ChatMessage> messages,
+  ) {
+    if (currentTitle != 'New Chat') return currentTitle;
+
+    final firstUserMessage = messages.cast<ChatMessage?>().firstWhere(
+      (message) => message != null && message.isUser && message.text.trim().isNotEmpty,
+      orElse: () => null,
+    );
+
+    if (firstUserMessage == null) {
+      return currentTitle;
     }
+
+    final text = firstUserMessage.text.trim();
+    if (text.length <= 28) {
+      return text;
+    }
+
+    return '${text.substring(0, 28)}...';
   }
 
   void _scrollToBottomSoon() {

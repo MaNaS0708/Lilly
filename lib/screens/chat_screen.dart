@@ -3,8 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../controllers/chat_controller.dart';
+import '../controllers/conversation_list_controller.dart';
+import '../models/chat_conversation.dart';
 import '../services/image_picker_service.dart';
 import '../widgets/confirm_action_dialog.dart';
+import '../widgets/conversation_drawer.dart';
 import '../widgets/error_message_banner.dart';
 import '../widgets/message_input_bar.dart';
 import '../widgets/message_list.dart';
@@ -22,18 +25,29 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
   late final ChatController _chatController;
+  late final ConversationListController _conversationListController;
 
   @override
   void initState() {
     super.initState();
     _chatController = ChatController();
-    _chatController.loadMessages();
+    _conversationListController = ConversationListController();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    await _conversationListController.load();
+    final selected = _conversationListController.selectedConversation;
+    if (selected != null) {
+      _chatController.attachConversation(selected);
+    }
   }
 
   @override
   void dispose() {
     _textController.dispose();
     _chatController.dispose();
+    _conversationListController.dispose();
     super.dispose();
   }
 
@@ -90,20 +104,72 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendMessage() async {
     final text = _textController.text;
     _textController.clear();
-    await _chatController.sendMessage(text);
+
+    final updatedConversation = await _chatController.sendMessage(text);
+    if (updatedConversation != null) {
+      await _conversationListController.upsertConversation(updatedConversation);
+    }
   }
 
-  Future<void> _clearChat() async {
+  Future<void> _createNewChat() async {
+    final conversation = await _conversationListController.createNewConversation();
+    _chatController.attachConversation(conversation);
+
+    if (!mounted) return;
+    Navigator.of(context).maybePop();
+  }
+
+  Future<void> _selectConversation(String id) async {
+    await _conversationListController.selectConversation(id);
+    final selected = _conversationListController.selectedConversation;
+    if (selected != null) {
+      _chatController.attachConversation(selected);
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).maybePop();
+  }
+
+  Future<void> _deleteConversation(String id) async {
+    final shouldDelete = await ConfirmActionDialog.show(
+      context,
+      title: 'Delete chat?',
+      message: 'This conversation will be removed from this device.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+    );
+
+    if (!shouldDelete) return;
+
+    await _conversationListController.deleteConversation(id);
+    final selected = _conversationListController.selectedConversation;
+    if (selected != null) {
+      _chatController.attachConversation(selected);
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).maybePop();
+  }
+
+  Future<void> _clearCurrentChat() async {
+    final current = _chatController.conversation;
+    if (current == null) return;
+
     final shouldClear = await ConfirmActionDialog.show(
       context,
-      title: 'Clear chat?',
-      message: 'This will remove all saved messages from this device.',
+      title: 'Clear current chat?',
+      message: 'This will remove all messages from the current conversation.',
       confirmLabel: 'Clear',
       cancelLabel: 'Keep',
     );
 
     if (!shouldClear) return;
-    await _chatController.clearMessages();
+
+    _chatController.clearActiveConversation();
+    final updatedConversation = _chatController.conversation;
+    if (updatedConversation != null) {
+      await _conversationListController.upsertConversation(updatedConversation);
+    }
   }
 
   void _openSettings() {
@@ -113,15 +179,28 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _chatController,
+      animation: Listenable.merge([
+        _chatController,
+        _conversationListController,
+      ]),
       builder: (context, _) {
+        final activeConversation = _chatController.conversation;
+
         return Scaffold(
+          drawer: ConversationDrawer(
+            conversations: _conversationListController.conversations,
+            selectedConversationId:
+                _conversationListController.selectedConversationId,
+            onNewChat: _createNewChat,
+            onSelectConversation: _selectConversation,
+            onDeleteConversation: _deleteConversation,
+          ),
           appBar: AppBar(
-            title: const Text('Vision Chat'),
+            title: Text(activeConversation?.title ?? 'Vision Chat'),
             centerTitle: false,
             actions: [
               IconButton(
-                onPressed: _clearChat,
+                onPressed: _clearCurrentChat,
                 icon: const Icon(Icons.delete_outline_rounded),
               ),
               IconButton(
@@ -130,32 +209,32 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ],
           ),
-          body: Column(
-            children: [
-              if (_chatController.errorMessage != null)
-                ErrorMessageBanner(
-                  message: _chatController.errorMessage!,
-                  onDismiss: _chatController.dismissError,
-                ),
-              Expanded(
-                child: _chatController.isLoadingHistory
-                    ? const Center(child: CircularProgressIndicator())
-                    : MessageList(
+          body: _conversationListController.isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                  children: [
+                    if (_chatController.errorMessage != null)
+                      ErrorMessageBanner(
+                        message: _chatController.errorMessage!,
+                        onDismiss: _chatController.dismissError,
+                      ),
+                    Expanded(
+                      child: MessageList(
                         messages: _chatController.messages,
                         scrollController: _chatController.scrollController,
                         isLoading: _chatController.isSending,
                       ),
-              ),
-              MessageInputBar(
-                controller: _textController,
-                selectedImage: _chatController.selectedImage,
-                isSending: _chatController.isSending,
-                onPickImage: _showImageSourceSheet,
-                onRemoveImage: _chatController.removeSelectedImage,
-                onSend: _sendMessage,
-              ),
-            ],
-          ),
+                    ),
+                    MessageInputBar(
+                      controller: _textController,
+                      selectedImage: _chatController.selectedImage,
+                      isSending: _chatController.isSending,
+                      onPickImage: _showImageSourceSheet,
+                      onRemoveImage: _chatController.removeSelectedImage,
+                      onSend: _sendMessage,
+                    ),
+                  ],
+                ),
         );
       },
     );
