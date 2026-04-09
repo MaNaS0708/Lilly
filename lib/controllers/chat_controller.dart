@@ -2,33 +2,33 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../controllers/model_controller.dart';
 import '../models/chat_conversation.dart';
 import '../models/chat_message.dart';
+import '../models/model_request.dart';
 import '../services/conversation_title_service.dart';
-import '../services/local_model_service.dart';
 
 class ChatController extends ChangeNotifier {
   ChatController({
-    LocalModelService? localModelService,
+    required ModelController modelController,
     ConversationTitleService? conversationTitleService,
-  }) : _localModelService = localModelService ?? LocalModelService(),
+  }) : _modelController = modelController,
        _conversationTitleService =
            conversationTitleService ?? ConversationTitleService();
 
-  final LocalModelService _localModelService;
+  final ModelController _modelController;
   final ConversationTitleService _conversationTitleService;
   final ScrollController scrollController = ScrollController();
 
   ChatConversation? _conversation;
   File? _selectedImage;
-  bool _isSending = false;
   String? _errorMessage;
 
   ChatConversation? get conversation => _conversation;
   List<ChatMessage> get messages => _conversation?.messages ?? const [];
   File? get selectedImage => _selectedImage;
-  bool get isSending => _isSending;
-  String? get errorMessage => _errorMessage;
+  bool get isSending => _modelController.isGenerating;
+  String? get errorMessage => _errorMessage ?? _modelController.errorMessage;
 
   void attachConversation(ChatConversation conversation) {
     _conversation = conversation;
@@ -55,7 +55,6 @@ class ChatController extends ChangeNotifier {
   }
 
   void dismissError() {
-    if (_errorMessage == null) return;
     _errorMessage = null;
     notifyListeners();
   }
@@ -77,9 +76,14 @@ class ChatController extends ChangeNotifier {
     if (current == null) return null;
 
     final text = rawText.trim();
-
-    if (_isSending) return null;
+    if (isSending) return null;
     if (text.isEmpty && _selectedImage == null) return null;
+
+    if (!_modelController.isReady) {
+      _errorMessage = 'Model is not ready yet.';
+      notifyListeners();
+      return null;
+    }
 
     final image = _selectedImage;
     final historySnapshot = List<ChatMessage>.from(current.messages);
@@ -103,47 +107,39 @@ class ChatController extends ChangeNotifier {
 
     _conversation = updatedConversation;
     _selectedImage = null;
-    _isSending = true;
     _errorMessage = null;
     notifyListeners();
     _scrollToBottomSoon();
 
-    try {
-      final response = await _localModelService.generateResponse(
+    final result = await _modelController.generateResponse(
+      ModelRequest(
         prompt: text,
         history: historySnapshot,
-        hasImage: image != null,
-      );
+        imagePath: image?.path,
+      ),
+    );
 
-      if (response.success) {
-        final replyMessage = ChatMessage(
-          text: response.text,
-          isUser: false,
-          createdAt: DateTime.now(),
-        );
-
-        final conversationWithReply = _conversation!.copyWith(
-          messages: [..._conversation!.messages, replyMessage],
-          updatedAt: DateTime.now(),
-        );
-
-        _conversation = conversationWithReply;
-        return conversationWithReply;
-      }
-
-      if (response.errorMessage != null) {
-        _errorMessage = response.errorMessage;
-      }
-
-      return _conversation;
-    } catch (_) {
-      _errorMessage = 'Something went wrong while generating a reply.';
-      return _conversation;
-    } finally {
-      _isSending = false;
+    if (!result.success) {
+      _errorMessage = result.errorMessage;
       notifyListeners();
-      _scrollToBottomSoon();
+      return _conversation;
     }
+
+    final replyMessage = ChatMessage(
+      text: result.text,
+      isUser: false,
+      createdAt: DateTime.now(),
+    );
+
+    final conversationWithReply = _conversation!.copyWith(
+      messages: [..._conversation!.messages, replyMessage],
+      updatedAt: DateTime.now(),
+    );
+
+    _conversation = conversationWithReply;
+    notifyListeners();
+    _scrollToBottomSoon();
+    return conversationWithReply;
   }
 
   void _scrollToBottomSoon() {

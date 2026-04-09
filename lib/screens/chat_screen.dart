@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../controllers/chat_controller.dart';
 import '../controllers/conversation_list_controller.dart';
+import '../controllers/model_controller.dart';
 import '../services/image_picker_service.dart';
 import '../services/settings_service.dart';
 import '../widgets/confirm_action_dialog.dart';
@@ -27,6 +28,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
   final SettingsService _settingsService = SettingsService();
 
+  late final ModelController _modelController;
   late final ChatController _chatController;
   late final ConversationListController _conversationListController;
 
@@ -35,7 +37,8 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    _chatController = ChatController();
+    _modelController = ModelController();
+    _chatController = ChatController(modelController: _modelController);
     _conversationListController = ConversationListController();
     _bootstrap();
   }
@@ -43,6 +46,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _bootstrap() async {
     _enableImageInput = await _settingsService.getEnableImageInput();
     await _conversationListController.load();
+    await _modelController.initialize();
 
     final selected = _conversationListController.selectedConversation;
     if (selected != null) {
@@ -59,6 +63,8 @@ class _ChatScreenState extends State<ChatScreen> {
     _textController.dispose();
     _chatController.dispose();
     _conversationListController.dispose();
+    _modelController.shutdown();
+    _modelController.dispose();
     super.dispose();
   }
 
@@ -230,8 +236,13 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _openSettings() async {
-    await Navigator.of(context).pushNamed(SettingsScreen.routeName);
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SettingsScreen(modelController: _modelController),
+      ),
+    );
     await _refreshSettings();
+    await _modelController.refreshStatus();
   }
 
   @override
@@ -240,6 +251,7 @@ class _ChatScreenState extends State<ChatScreen> {
       animation: Listenable.merge([
         _chatController,
         _conversationListController,
+        _modelController,
       ]),
       builder: (context, _) {
         final activeConversation = _chatController.conversation;
