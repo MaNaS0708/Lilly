@@ -2,12 +2,12 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
-class ModelFileService {
-  static const String modelFileName = 'gemma-4-model.task';
+import '../config/model_setup_constants.dart';
 
+class ModelFileService {
   Future<String> getModelPath() async {
     final dir = await getApplicationDocumentsDirectory();
-    return '${dir.path}/$modelFileName';
+    return '${dir.path}/${ModelSetupConstants.modelFileName}';
   }
 
   Future<bool> modelExists() async {

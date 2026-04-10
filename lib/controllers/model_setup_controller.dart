@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../config/model_setup_constants.dart';
 import '../models/model_download_state.dart';
 import '../services/hf_auth_service.dart';
 import '../services/model_download_service.dart';
@@ -41,10 +42,11 @@ class ModelSetupController extends ChangeNotifier {
         return;
       }
 
+      final storedToken = await _hfAuthService.getStoredToken();
+      _accessToken = storedToken?.accessToken;
+
       _state = ModelDownloadState.needsDownload;
       notifyListeners();
-
-      await _beginDownloadFlow();
     } catch (e) {
       _state = ModelDownloadState.error;
       _errorMessage = e.toString();
@@ -52,20 +54,25 @@ class ModelSetupController extends ChangeNotifier {
     }
   }
 
-  Future<void> _beginDownloadFlow() async {
-    final accessCode = await _modelDownloadService.checkAccess();
+  Future<void> startSetup() async {
+    _errorMessage = null;
+    notifyListeners();
 
-    if (accessCode == 200) {
+    if (_accessToken != null && _accessToken!.isNotEmpty) {
+      final status = await _modelDownloadService.checkAccess(_accessToken);
+      if (status == 200) {
+        await _download();
+        return;
+      }
+    }
+
+    final publicAccess = await _modelDownloadService.checkAccess();
+    if (publicAccess == 200) {
       await _download();
       return;
     }
 
-    if (accessCode == 403 || accessCode == 401) {
-      await authenticateAndDownload();
-      return;
-    }
-
-    throw Exception('Unable to access model. Status: $accessCode');
+    await authenticateAndDownload();
   }
 
   Future<void> authenticateAndDownload() async {
@@ -75,14 +82,14 @@ class ModelSetupController extends ChangeNotifier {
 
     final auth = await _hfAuthService.authenticate();
 
-    if (!auth.success) {
+    if (!auth.success || auth.tokenData == null) {
       _state = ModelDownloadState.error;
       _errorMessage = auth.error ?? 'Authentication failed.';
       notifyListeners();
       return;
     }
 
-    _accessToken = auth.accessToken;
+    _accessToken = auth.tokenData!.accessToken;
 
     final status = await _modelDownloadService.checkAccess(_accessToken);
     if (status == 200) {
@@ -90,7 +97,7 @@ class ModelSetupController extends ChangeNotifier {
       return;
     }
 
-    if (status == 403) {
+    if (status == 401 || status == 403) {
       _state = ModelDownloadState.awaitingLicenseAcceptance;
       notifyListeners();
       return;
@@ -102,12 +109,14 @@ class ModelSetupController extends ChangeNotifier {
   }
 
   Future<void> openLicensePage() async {
-    final uri = Uri.parse('https://huggingface.co/YOUR_MODEL_PATH');
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    await launchUrl(
+      Uri.parse(ModelSetupConstants.modelCardUrl),
+      mode: LaunchMode.externalApplication,
+    );
   }
 
   Future<void> retryAfterLicenseAcceptance() async {
-    if (_accessToken == null) {
+    if (_accessToken == null || _accessToken!.isEmpty) {
       await authenticateAndDownload();
       return;
     }

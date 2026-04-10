@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:http/http.dart' as http;
 
+import '../config/model_setup_constants.dart';
 import 'model_file_service.dart';
 
 class ModelDownloadService {
@@ -11,9 +10,6 @@ class ModelDownloadService {
 
   final ModelFileService _modelFileService;
 
-  static const String modelUrl =
-      'https://huggingface.co/YOUR_MODEL_PATH/resolve/main/gemma-4-model.task?download=true';
-
   Future<int> checkAccess([String? accessToken]) async {
     try {
       final headers = <String, String>{};
@@ -21,7 +17,10 @@ class ModelDownloadService {
         headers['Authorization'] = 'Bearer $accessToken';
       }
 
-      final response = await http.head(Uri.parse(modelUrl), headers: headers);
+      final response = await http.head(
+        Uri.parse(ModelSetupConstants.modelUrl),
+        headers: headers,
+      );
       return response.statusCode;
     } catch (_) {
       return -1;
@@ -39,7 +38,7 @@ class ModelDownloadService {
       headers['Authorization'] = 'Bearer $accessToken';
     }
 
-    final request = http.Request('GET', Uri.parse(modelUrl));
+    final request = http.Request('GET', Uri.parse(ModelSetupConstants.modelUrl));
     request.headers.addAll(headers);
 
     final response = await request.send();
@@ -49,7 +48,7 @@ class ModelDownloadService {
     }
 
     final total = response.contentLength ?? 0;
-    int received = 0;
+    var received = 0;
 
     final sink = file.openWrite();
 
