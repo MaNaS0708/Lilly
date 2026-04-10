@@ -43,13 +43,13 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _handlePrimaryAction() async {
     switch (_modelSetupController.state) {
       case ModelDownloadState.needsDownload:
-        await _modelSetupController.authenticateAndDownload();
+        await _modelSetupController.startSetup();
         break;
       case ModelDownloadState.awaitingLicenseAcceptance:
         await _modelSetupController.openLicensePage();
         break;
       case ModelDownloadState.error:
-        await _modelSetupController.initialize();
+        await _modelSetupController.retryDownload();
         break;
       default:
         break;
@@ -60,6 +60,11 @@ class _SplashScreenState extends State<SplashScreen> {
     if (_modelSetupController.state ==
         ModelDownloadState.awaitingLicenseAcceptance) {
       await _modelSetupController.retryAfterLicenseAcceptance();
+      return;
+    }
+
+    if (_modelSetupController.canCancel) {
+      await _modelSetupController.cancelDownload();
     }
   }
 
@@ -85,15 +90,15 @@ class _SplashScreenState extends State<SplashScreen> {
   String _messageForState(ModelDownloadState state) {
     switch (state) {
       case ModelDownloadState.checking:
-        return 'Checking whether your offline Gemma model is already available on this device.';
+        return 'Checking whether your offline model is already available on this device.';
       case ModelDownloadState.needsDownload:
-        return 'This app needs to download the model once. After that, chat works fully offline.';
+        return 'The model needs to be downloaded once. After that, Lilly works offline.';
       case ModelDownloadState.authenticating:
-        return 'Sign in to Hugging Face so the app can access the Gemma model.';
+        return 'Sign in to Hugging Face so Lilly can access the model.';
       case ModelDownloadState.awaitingLicenseAcceptance:
         return 'You need to accept the model license on Hugging Face before download can continue.';
       case ModelDownloadState.downloading:
-        return 'The model is downloading now. This may take a while depending on your connection.';
+        return 'The model is downloading in the background. You can keep this screen open until setup finishes.';
       case ModelDownloadState.ready:
         return 'Model is ready.';
       case ModelDownloadState.error:
@@ -127,18 +132,28 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Widget _buildSecondaryButton() {
-    if (_modelSetupController.state !=
+    if (_modelSetupController.state ==
         ModelDownloadState.awaitingLicenseAcceptance) {
-      return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: OutlinedButton(
+          onPressed: _handleSecondaryAction,
+          child: const Text('I Accepted The License'),
+        ),
+      );
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: OutlinedButton(
-        onPressed: _handleSecondaryAction,
-        child: const Text('I Accepted The License'),
-      ),
-    );
+    if (_modelSetupController.canCancel) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: OutlinedButton(
+          onPressed: _handleSecondaryAction,
+          child: const Text('Cancel Download'),
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 
   Widget _buildProgressSection() {

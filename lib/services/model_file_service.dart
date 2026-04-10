@@ -5,19 +5,29 @@ import 'package:path_provider/path_provider.dart';
 import '../config/model_setup_constants.dart';
 
 class ModelFileService {
-  Future<String> getModelPath() async {
+  Future<String> getModelDirectoryPath() async {
     final dir = await getApplicationDocumentsDirectory();
-    return '${dir.path}/${ModelSetupConstants.modelFileName}';
+    return dir.path;
+  }
+
+  Future<String> getModelPath() async {
+    final dir = await getModelDirectoryPath();
+    return '$dir/${ModelSetupConstants.modelFileName}';
   }
 
   Future<bool> modelExists() async {
-    final path = await getModelPath();
-    final file = File(path);
+    final file = File(await getModelPath());
     return file.exists();
   }
 
   Future<File> getModelFile() async {
-    final path = await getModelPath();
-    return File(path);
+    return File(await getModelPath());
+  }
+
+  Future<void> deleteModelIfExists() async {
+    final file = File(await getModelPath());
+    if (await file.exists()) {
+      await file.delete();
+    }
   }
 }

@@ -15,7 +15,6 @@ class HfTokenStorageService {
   Future<HfTokenData?> loadToken() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_tokenKey);
-
     if (raw == null || raw.isEmpty) return null;
 
     final decoded = jsonDecode(raw);

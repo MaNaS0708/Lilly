@@ -116,20 +116,14 @@ class HfAuthService {
       },
     );
 
-    if (response.statusCode != 200) {
-      return null;
-    }
+    if (response.statusCode != 200) return null;
 
     final decoded = jsonDecode(response.body);
-    if (decoded is! Map) {
-      return null;
-    }
+    if (decoded is! Map) return null;
 
     final map = Map<String, dynamic>.from(decoded);
     final accessToken = map['access_token'] as String?;
-    if (accessToken == null || accessToken.isEmpty) {
-      return null;
-    }
+    if (accessToken == null || accessToken.isEmpty) return null;
 
     return HfTokenData(
       accessToken: accessToken,
@@ -143,10 +137,7 @@ class HfAuthService {
     const chars =
         'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
     final random = Random.secure();
-    return List.generate(
-      64,
-      (_) => chars[random.nextInt(chars.length)],
-    ).join();
+    return List.generate(64, (_) => chars[random.nextInt(chars.length)]).join();
   }
 
   String _generateCodeChallenge(String codeVerifier) {

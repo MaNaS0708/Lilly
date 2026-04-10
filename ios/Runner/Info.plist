@@ -26,6 +26,7 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -35,7 +36,6 @@
 			</array>
 		</dict>
 	</array>
-
 
 	<key>NSCameraUsageDescription</key>
 	<string>Lilly needs camera access so you can attach photos in chat.</string>
