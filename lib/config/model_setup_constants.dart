@@ -1,5 +1,5 @@
 class ModelSetupConstants {
-  static const String hfClientId = 'PASTE_YOUR_REAL_HF_CLIENT_ID_HERE';
+  static const String hfClientId = '56b2ee2d-c912-400d-9d5b-a43c2bdc5add';
   static const String hfRedirectUri = 'com.example.lilly://oauthredirect';
   static const String hfCallbackScheme = 'com.example.lilly';
 
