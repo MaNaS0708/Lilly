@@ -36,9 +36,9 @@ class ModelController extends ChangeNotifier {
       if (_status == ModelStatus.error) {
         _errorMessage = 'Failed to initialize local model.';
       }
-    } catch (_) {
+    } catch (e) {
       _status = ModelStatus.error;
-      _errorMessage = 'Failed to initialize local model.';
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
     }
 
     notifyListeners();
@@ -57,10 +57,10 @@ class ModelController extends ChangeNotifier {
       }
 
       return result;
-    } catch (_) {
-      _errorMessage = 'Failed to generate response.';
-      return const ModelResult.failure(
-        errorMessage: 'Failed to generate response.',
+    } catch (e) {
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      return ModelResult.failure(
+        errorMessage: _errorMessage ?? 'Failed to generate response.',
       );
     } finally {
       _isGenerating = false;

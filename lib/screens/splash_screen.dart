@@ -43,13 +43,11 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _handlePrimaryAction() async {
     switch (_modelSetupController.state) {
       case ModelDownloadState.needsDownload:
+      case ModelDownloadState.error:
         await _modelSetupController.startSetup();
         break;
       case ModelDownloadState.awaitingLicenseAcceptance:
         await _modelSetupController.openLicensePage();
-        break;
-      case ModelDownloadState.error:
-        await _modelSetupController.retryDownload();
         break;
       default:
         break;
@@ -90,15 +88,15 @@ class _SplashScreenState extends State<SplashScreen> {
   String _messageForState(ModelDownloadState state) {
     switch (state) {
       case ModelDownloadState.checking:
-        return 'Checking whether your offline model is already available on this device.';
+        return 'Checking whether the offline model is already available on this device.';
       case ModelDownloadState.needsDownload:
         return 'The model needs to be downloaded once. After that, Lilly works offline.';
       case ModelDownloadState.authenticating:
         return 'Sign in to Hugging Face so Lilly can access the model.';
       case ModelDownloadState.awaitingLicenseAcceptance:
-        return 'You need to accept the model license on Hugging Face before download can continue.';
+        return 'Open the model page, accept the license, then come back here and continue.';
       case ModelDownloadState.downloading:
-        return 'The model is downloading in the background. You can keep this screen open until setup finishes.';
+        return 'The model is downloading now. Keep this screen open until setup completes.';
       case ModelDownloadState.ready:
         return 'Model is ready.';
       case ModelDownloadState.error:
@@ -107,121 +105,35 @@ class _SplashScreenState extends State<SplashScreen> {
     }
   }
 
-  Widget _buildPrimaryButton() {
-    final state = _modelSetupController.state;
-
-    switch (state) {
+  String? _primaryLabel() {
+    switch (_modelSetupController.state) {
       case ModelDownloadState.needsDownload:
-        return _ActionButton(
-          label: 'Continue',
-          onPressed: _handlePrimaryAction,
-        );
+        return 'Start Download';
       case ModelDownloadState.awaitingLicenseAcceptance:
-        return _ActionButton(
-          label: 'Open License Page',
-          onPressed: _handlePrimaryAction,
-        );
+        return 'Open License Page';
       case ModelDownloadState.error:
-        return _ActionButton(
-          label: 'Retry',
-          onPressed: _handlePrimaryAction,
-        );
+        return 'Start Again';
       default:
-        return const SizedBox.shrink();
+        return null;
     }
   }
 
-  Widget _buildSecondaryButton() {
+  String? _secondaryLabel() {
     if (_modelSetupController.state ==
         ModelDownloadState.awaitingLicenseAcceptance) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 12),
-        child: OutlinedButton(
-          onPressed: _handleSecondaryAction,
-          child: const Text('I Accepted The License'),
-        ),
-      );
+      return 'I Accepted The License';
     }
-
     if (_modelSetupController.canCancel) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 12),
-        child: OutlinedButton(
-          onPressed: _handleSecondaryAction,
-          child: const Text('Cancel Download'),
-        ),
-      );
+      return 'Cancel Download';
     }
-
-    return const SizedBox.shrink();
-  }
-
-  Widget _buildProgressSection() {
-    if (_modelSetupController.state != ModelDownloadState.downloading) {
-      return const SizedBox.shrink();
-    }
-
-    final progress = _modelSetupController.progress;
-
-    return Column(
-      children: [
-        const SizedBox(height: 28),
-        LinearProgressIndicator(value: progress == 0 ? null : progress),
-        const SizedBox(height: 10),
-        Text(
-          '${(progress * 100).toStringAsFixed(0)}%',
-          style: TextStyle(
-            color: Colors.grey.shade700,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTopVisual() {
-    final state = _modelSetupController.state;
-    final busy = state == ModelDownloadState.checking ||
-        state == ModelDownloadState.authenticating ||
-        state == ModelDownloadState.downloading;
-
-    return Container(
-      width: 96,
-      height: 96,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1E3A8A), Color(0xFF4F46E5)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF4F46E5).withOpacity(0.25),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: busy
-          ? const Padding(
-              padding: EdgeInsets.all(26),
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-              ),
-            )
-          : const Icon(
-              Icons.visibility_rounded,
-              color: Colors.white,
-              size: 44,
-            ),
-    );
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
     final state = _modelSetupController.state;
+    final primaryLabel = _primaryLabel();
+    final secondaryLabel = _secondaryLabel();
 
     return Scaffold(
       body: Container(
@@ -242,7 +154,41 @@ class _SplashScreenState extends State<SplashScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _buildTopVisual(),
+                    Container(
+                      width: 96,
+                      height: 96,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF1E3A8A), Color(0xFF4F46E5)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF4F46E5).withOpacity(0.25),
+                            blurRadius: 24,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: state == ModelDownloadState.checking ||
+                              state == ModelDownloadState.authenticating ||
+                              state == ModelDownloadState.downloading
+                          ? const Padding(
+                              padding: EdgeInsets.all(26),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3,
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Icon(
+                              Icons.visibility_rounded,
+                              color: Colors.white,
+                              size: 44,
+                            ),
+                    ),
                     const SizedBox(height: 28),
                     Text(
                       _titleForState(state),
@@ -263,40 +209,48 @@ class _SplashScreenState extends State<SplashScreen> {
                         color: Colors.grey.shade700,
                       ),
                     ),
-                    _buildProgressSection(),
+                    if (state == ModelDownloadState.downloading) ...[
+                      const SizedBox(height: 28),
+                      LinearProgressIndicator(
+                        value: _modelSetupController.progress == 0
+                            ? null
+                            : _modelSetupController.progress,
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        '${(_modelSetupController.progress * 100).toStringAsFixed(0)}%',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 28),
-                    _buildPrimaryButton(),
-                    _buildSecondaryButton(),
+                    if (primaryLabel != null)
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: _handlePrimaryAction,
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: Text(primaryLabel),
+                        ),
+                      ),
+                    if (secondaryLabel != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: OutlinedButton(
+                          onPressed: _handleSecondaryAction,
+                          child: Text(secondaryLabel),
+                        ),
+                      ),
                   ],
                 ),
               ),
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  final String label;
-  final VoidCallback onPressed;
-
-  const _ActionButton({
-    required this.label,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-        ),
-        child: Text(label),
       ),
     );
   }

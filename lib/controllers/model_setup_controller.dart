@@ -6,6 +6,7 @@ import '../config/model_setup_constants.dart';
 import '../models/model_download_state.dart';
 import '../services/hf_auth_service.dart';
 import '../services/model_download_manager.dart';
+import '../services/model_download_service.dart';
 import '../services/model_file_service.dart';
 import '../services/model_setup_storage_service.dart';
 
@@ -13,10 +14,12 @@ class ModelSetupController extends ChangeNotifier {
   ModelSetupController({
     ModelFileService? modelFileService,
     ModelDownloadManager? modelDownloadManager,
+    ModelDownloadService? modelDownloadService,
     ModelSetupStorageService? storageService,
     HfAuthService? hfAuthService,
   }) : _modelFileService = modelFileService ?? ModelFileService(),
        _modelDownloadManager = modelDownloadManager ?? ModelDownloadManager(),
+       _modelDownloadService = modelDownloadService ?? ModelDownloadService(),
        _storageService = storageService ?? ModelSetupStorageService(),
        _hfAuthService = hfAuthService ?? HfAuthService() {
     _modelDownloadManager.initializePort(_onDownloadEvent);
@@ -24,6 +27,7 @@ class ModelSetupController extends ChangeNotifier {
 
   final ModelFileService _modelFileService;
   final ModelDownloadManager _modelDownloadManager;
+  final ModelDownloadService _modelDownloadService;
   final ModelSetupStorageService _storageService;
   final HfAuthService _hfAuthService;
 
@@ -36,10 +40,6 @@ class ModelSetupController extends ChangeNotifier {
   ModelDownloadState get state => _state;
   double get progress => _progress;
   String? get errorMessage => _errorMessage;
-  bool get canPause => _state == ModelDownloadState.downloading;
-  bool get canRetry =>
-      _state == ModelDownloadState.error ||
-      _state == ModelDownloadState.needsDownload;
   bool get canCancel => _taskId != null;
 
   Future<void> initialize() async {
@@ -48,7 +48,8 @@ class ModelSetupController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      if (await _modelFileService.modelExists()) {
+      final exists = await _modelFileService.modelExists();
+      if (exists) {
         _state = ModelDownloadState.ready;
         notifyListeners();
         return;
@@ -69,19 +70,22 @@ class ModelSetupController extends ChangeNotifier {
               _state = ModelDownloadState.downloading;
               notifyListeners();
               return;
-            case DownloadTaskStatus.paused:
-              _state = ModelDownloadState.error;
-              _errorMessage = 'Download paused. Tap retry to resume.';
-              notifyListeners();
-              return;
             case DownloadTaskStatus.complete:
               _state = ModelDownloadState.ready;
               await _storageService.markCompleted(true);
+              await _storageService.clearTaskId();
+              _taskId = null;
               notifyListeners();
               return;
-            default:
+            case DownloadTaskStatus.failed:
+            case DownloadTaskStatus.paused:
+            case DownloadTaskStatus.canceled:
+            case DownloadTaskStatus.undefined:
+              await _cleanupBrokenDownloadState();
               break;
           }
+        } else {
+          await _cleanupBrokenDownloadState();
         }
       }
 
@@ -98,7 +102,25 @@ class ModelSetupController extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
+    if (_taskId != null) {
+      await _cleanupBrokenDownloadState();
+    }
+
     if (_accessToken != null && _accessToken!.isNotEmpty) {
+      final tokenStatus = await _modelDownloadService.checkAccess(_accessToken);
+      if (tokenStatus == 200) {
+        await _startDownload();
+        return;
+      }
+      if (tokenStatus == 401 || tokenStatus == 403) {
+        _state = ModelDownloadState.awaitingLicenseAcceptance;
+        notifyListeners();
+        return;
+      }
+    }
+
+    final publicStatus = await _modelDownloadService.checkAccess();
+    if (publicStatus == 200) {
       await _startDownload();
       return;
     }
@@ -121,7 +143,39 @@ class ModelSetupController extends ChangeNotifier {
     }
 
     _accessToken = auth.tokenData!.accessToken;
-    await _startDownload();
+
+    final status = await _modelDownloadService.checkAccess(_accessToken);
+    if (status == 200) {
+      await _startDownload();
+      return;
+    }
+
+    if (status == 401 || status == 403) {
+      _state = ModelDownloadState.awaitingLicenseAcceptance;
+      notifyListeners();
+      return;
+    }
+
+    _state = ModelDownloadState.error;
+    _errorMessage = 'Authenticated, but the model is still not accessible.';
+    notifyListeners();
+  }
+
+  Future<void> retryAfterLicenseAcceptance() async {
+    if (_accessToken == null || _accessToken!.isEmpty) {
+      await authenticateAndDownload();
+      return;
+    }
+
+    final status = await _modelDownloadService.checkAccess(_accessToken);
+    if (status == 200) {
+      await _startDownload();
+      return;
+    }
+
+    _state = ModelDownloadState.awaitingLicenseAcceptance;
+    _errorMessage = 'License not accepted yet, or model access is still blocked.';
+    notifyListeners();
   }
 
   Future<void> _startDownload() async {
@@ -145,36 +199,12 @@ class ModelSetupController extends ChangeNotifier {
     await _storageService.saveTaskId(taskId);
   }
 
-  Future<void> retryDownload() async {
-    if (_taskId == null) {
-      await startSetup();
-      return;
-    }
-
-    final resumedTaskId = await _modelDownloadManager.resumeDownload(_taskId!);
-    if (resumedTaskId == null) {
-      _state = ModelDownloadState.error;
-      _errorMessage = 'Unable to resume download.';
-      notifyListeners();
-      return;
-    }
-
-    _taskId = resumedTaskId;
-    await _storageService.saveTaskId(resumedTaskId);
-    _state = ModelDownloadState.downloading;
-    _errorMessage = null;
-    notifyListeners();
-  }
-
   Future<void> cancelDownload() async {
     if (_taskId != null) {
       await _modelDownloadManager.cancelDownload(_taskId!);
     }
-    await _modelFileService.deleteModelIfExists();
-    await _storageService.reset();
+    await _cleanupBrokenDownloadState();
 
-    _taskId = null;
-    _progress = 0;
     _state = ModelDownloadState.needsDownload;
     _errorMessage = null;
     notifyListeners();
@@ -187,8 +217,11 @@ class ModelSetupController extends ChangeNotifier {
     );
   }
 
-  Future<void> retryAfterLicenseAcceptance() async {
-    await startSetup();
+  Future<void> _cleanupBrokenDownloadState() async {
+    await _storageService.reset();
+    await _modelFileService.deleteModelIfExists();
+    _taskId = null;
+    _progress = 0;
   }
 
   void _onDownloadEvent(String id, DownloadTaskStatus status, int progress) async {
@@ -208,22 +241,20 @@ class ModelSetupController extends ChangeNotifier {
         _taskId = null;
         break;
       case DownloadTaskStatus.failed:
+        await _cleanupBrokenDownloadState();
         _state = ModelDownloadState.error;
-        _errorMessage = 'Download failed. Please retry.';
-        await _storageService.clearTaskId();
-        _taskId = null;
+        _errorMessage = 'Download failed. Please start again.';
         break;
       case DownloadTaskStatus.paused:
+        await _cleanupBrokenDownloadState();
         _state = ModelDownloadState.error;
-        _errorMessage = 'Download paused. Tap retry to resume.';
+        _errorMessage = 'Download was interrupted. Please start again.';
         break;
       case DownloadTaskStatus.canceled:
+        await _cleanupBrokenDownloadState();
         _state = ModelDownloadState.needsDownload;
-        _progress = 0;
-        await _storageService.clearTaskId();
-        _taskId = null;
         break;
-      default:
+      case DownloadTaskStatus.undefined:
         break;
     }
 

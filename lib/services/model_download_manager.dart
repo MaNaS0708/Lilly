@@ -19,9 +19,8 @@ class ModelDownloadSnapshot {
 }
 
 class ModelDownloadManager {
-  ModelDownloadManager({
-    ModelFileService? modelFileService,
-  }) : _modelFileService = modelFileService ?? ModelFileService();
+  ModelDownloadManager({ModelFileService? modelFileService})
+    : _modelFileService = modelFileService ?? ModelFileService();
 
   final ModelFileService _modelFileService;
   final ReceivePort _port = ReceivePort();
@@ -63,14 +62,6 @@ class ModelDownloadManager {
       openFileFromNotification: false,
       saveInPublicStorage: false,
     );
-  }
-
-  Future<String?> resumeDownload(String taskId) async {
-    return FlutterDownloader.resume(taskId: taskId);
-  }
-
-  Future<void> pauseDownload(String taskId) async {
-    await FlutterDownloader.pause(taskId: taskId);
   }
 
   Future<void> cancelDownload(String taskId) async {

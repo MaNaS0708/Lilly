@@ -3,11 +3,17 @@ import 'package:flutter/services.dart';
 import '../models/model_request.dart';
 import '../models/model_result.dart';
 import '../models/model_status.dart';
+import 'model_file_service.dart';
 import 'model_service.dart';
 
 class NativeModelService implements ModelService {
+  NativeModelService({
+    ModelFileService? modelFileService,
+  }) : _modelFileService = modelFileService ?? ModelFileService();
+
   static const MethodChannel _channel = MethodChannel('lilly/model');
 
+  final ModelFileService _modelFileService;
   ModelStatus _status = ModelStatus.uninitialized;
 
   @override
@@ -16,15 +22,26 @@ class NativeModelService implements ModelService {
 
     _status = ModelStatus.loading;
 
+    final modelPath = await _modelFileService.getModelPath();
+
     try {
-      final result = await _channel.invokeMethod<bool>('initializeModel');
-      if (result == true) {
-        _status = ModelStatus.ready;
-      } else {
-        _status = ModelStatus.error;
+      final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'initializeModel',
+        {'modelPath': modelPath},
+      );
+
+      final success = result?['success'] == true;
+      final statusString = result?['status'] as String?;
+      final errorMessage = result?['errorMessage'] as String?;
+
+      _status = _mapStatus(statusString);
+
+      if (!success || _status != ModelStatus.ready) {
+        throw Exception(errorMessage ?? 'Native model initialization failed.');
       }
-    } catch (_) {
+    } catch (e) {
       _status = ModelStatus.error;
+      rethrow;
     }
   }
 
@@ -38,7 +55,16 @@ class NativeModelService implements ModelService {
 
   @override
   Future<ModelStatus> getStatus() async {
-    return _status;
+    try {
+      final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'getModelStatus',
+      );
+
+      _status = _mapStatus(result?['status'] as String?);
+      return _status;
+    } catch (_) {
+      return _status;
+    }
   }
 
   @override
@@ -80,6 +106,20 @@ class NativeModelService implements ModelService {
       return const ModelResult.failure(
         errorMessage: 'Native model invocation failed.',
       );
+    }
+  }
+
+  ModelStatus _mapStatus(String? value) {
+    switch (value) {
+      case 'loading':
+        return ModelStatus.loading;
+      case 'ready':
+        return ModelStatus.ready;
+      case 'error':
+        return ModelStatus.error;
+      case 'uninitialized':
+      default:
+        return ModelStatus.uninitialized;
     }
   }
 }
