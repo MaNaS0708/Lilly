@@ -32,12 +32,13 @@ class NativeModelService implements ModelService {
 
       final success = result?['success'] == true;
       final statusString = result?['status'] as String?;
-      final errorMessage = result?['errorMessage'] as String?;
 
       _status = _mapStatus(statusString);
 
       if (!success || _status != ModelStatus.ready) {
-        throw Exception(errorMessage ?? 'Native model initialization failed.');
+        throw Exception(
+          result?['errorMessage'] ?? 'Native model initialization failed.',
+        );
       }
     } catch (e) {
       _status = ModelStatus.error;

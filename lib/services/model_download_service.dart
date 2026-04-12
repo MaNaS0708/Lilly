@@ -19,20 +19,13 @@ class ModelDownloadService {
         headers['Authorization'] = 'Bearer $accessToken';
       }
 
-      print('Checking model access: ${ModelSetupConstants.modelUrl}');
-      print(
-        'Access token present: ${accessToken != null && accessToken.isNotEmpty}',
-      );
-
       final response = await http.head(
         Uri.parse(ModelSetupConstants.modelUrl),
         headers: headers,
       );
 
-      print('Access response status: ${response.statusCode}');
       return response.statusCode;
-    } catch (e) {
-      print('Access check failed: $e');
+    } catch (_) {
       return -1;
     }
   }
@@ -51,13 +44,6 @@ class ModelDownloadService {
     IOSink? sink;
 
     try {
-      print('Starting model download...');
-      print('Download URL: ${ModelSetupConstants.modelUrl}');
-      print(
-        'Auth token present: ${accessToken != null && accessToken.isNotEmpty}',
-      );
-      print('Saving model to: ${file.path}');
-
       final request = http.Request(
         'GET',
         Uri.parse(ModelSetupConstants.modelUrl),
@@ -65,9 +51,6 @@ class ModelDownloadService {
       request.headers.addAll(headers);
 
       final response = await request.send();
-
-      print('Download response status: ${response.statusCode}');
-      print('Content length: ${response.contentLength}');
 
       if (response.statusCode != 200) {
         throw Exception('Download failed with status ${response.statusCode}');
@@ -82,8 +65,6 @@ class ModelDownloadService {
         received += chunk.length;
         sink.add(chunk);
 
-        print('Received bytes: $received / $total');
-
         if (total > 0) {
           onProgress(received / total);
         }
@@ -92,11 +73,7 @@ class ModelDownloadService {
       await sink.flush();
       await sink.close();
       sink = null;
-
-      print('Download stream finished successfully');
-    } catch (e) {
-      print('Download failed: $e');
-
+    } catch (_) {
       try {
         await sink?.flush();
       } catch (_) {}
@@ -108,11 +85,8 @@ class ModelDownloadService {
       try {
         if (await file.exists()) {
           await file.delete();
-          print('Deleted partial model file after failure');
         }
-      } catch (deleteError) {
-        print('Failed to delete partial file: $deleteError');
-      }
+      } catch (_) {}
 
       throw Exception(
         'Model download interrupted. Please check your internet connection and try again.',

@@ -79,12 +79,6 @@ class ChatController extends ChangeNotifier {
     if (isSending) return null;
     if (text.isEmpty && _selectedImage == null) return null;
 
-    if (!_modelController.isReady) {
-      _errorMessage = 'Model is not ready yet.';
-      notifyListeners();
-      return null;
-    }
-
     final image = _selectedImage;
     final historySnapshot = List<ChatMessage>.from(current.messages);
 
@@ -96,7 +90,7 @@ class ChatController extends ChangeNotifier {
     );
 
     final updatedMessages = [...current.messages, userMessage];
-    final updatedConversation = current.copyWith(
+    var workingConversation = current.copyWith(
       title: _conversationTitleService.buildTitle(
         currentTitle: current.title,
         messages: updatedMessages,
@@ -105,11 +99,31 @@ class ChatController extends ChangeNotifier {
       updatedAt: DateTime.now(),
     );
 
-    _conversation = updatedConversation;
+    _conversation = workingConversation;
     _selectedImage = null;
     _errorMessage = null;
     notifyListeners();
     _scrollToBottomSoon();
+
+    if (!_modelController.isReady) {
+      const modelError = 'Model is not ready yet.';
+      final assistantError = ChatMessage(
+        text: modelError,
+        isUser: false,
+        createdAt: DateTime.now(),
+      );
+
+      workingConversation = workingConversation.copyWith(
+        messages: [...workingConversation.messages, assistantError],
+        updatedAt: DateTime.now(),
+      );
+
+      _conversation = workingConversation;
+      _errorMessage = modelError;
+      notifyListeners();
+      _scrollToBottomSoon();
+      return workingConversation;
+    }
 
     final result = await _modelController.generateResponse(
       ModelRequest(
@@ -120,9 +134,25 @@ class ChatController extends ChangeNotifier {
     );
 
     if (!result.success) {
-      _errorMessage = result.errorMessage;
+      final failureText =
+          result.errorMessage ?? 'Failed to generate a response.';
+
+      final assistantError = ChatMessage(
+        text: failureText,
+        isUser: false,
+        createdAt: DateTime.now(),
+      );
+
+      workingConversation = _conversation!.copyWith(
+        messages: [..._conversation!.messages, assistantError],
+        updatedAt: DateTime.now(),
+      );
+
+      _conversation = workingConversation;
+      _errorMessage = failureText;
       notifyListeners();
-      return _conversation;
+      _scrollToBottomSoon();
+      return workingConversation;
     }
 
     final replyMessage = ChatMessage(

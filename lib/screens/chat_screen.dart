@@ -7,7 +7,6 @@ import '../controllers/conversation_list_controller.dart';
 import '../controllers/model_controller.dart';
 import '../services/image_picker_service.dart';
 import '../services/settings_service.dart';
-import '../widgets/confirm_action_dialog.dart';
 import '../widgets/conversation_drawer.dart';
 import '../widgets/error_message_banner.dart';
 import '../widgets/message_input_bar.dart';
@@ -146,10 +145,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _sendMessage() async {
     final text = _textController.text;
-    _textController.clear();
 
     final updatedConversation = await _chatController.sendMessage(text);
     if (updatedConversation != null) {
+      _textController.clear();
       await _conversationListController.upsertConversation(updatedConversation);
     }
   }
@@ -214,27 +213,6 @@ class _ChatScreenState extends State<ChatScreen> {
     Navigator.of(context).maybePop();
   }
 
-  Future<void> _clearCurrentChat() async {
-    final current = _chatController.conversation;
-    if (current == null) return;
-
-    final shouldClear = await ConfirmActionDialog.show(
-      context,
-      title: 'Clear current chat?',
-      message: 'This will remove all messages from the current conversation.',
-      confirmLabel: 'Clear',
-      cancelLabel: 'Keep',
-    );
-
-    if (!shouldClear) return;
-
-    _chatController.clearActiveConversation();
-    final updatedConversation = _chatController.conversation;
-    if (updatedConversation != null) {
-      await _conversationListController.upsertConversation(updatedConversation);
-    }
-  }
-
   Future<void> _openSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -260,54 +238,52 @@ class _ChatScreenState extends State<ChatScreen> {
           drawer: ConversationDrawer(
             conversations: _conversationListController.conversations,
             selectedConversationId:
-                _conversationListController.selectedConversationId,
+                _conversationListController.selectedConversation?.id,
             onNewChat: _createNewChat,
             onSelectConversation: _selectConversation,
-            onDeleteConversation: _deleteConversation,
             onRenameConversation: _renameConversation,
+            onDeleteConversation: _deleteConversation,
           ),
           appBar: AppBar(
-            title: Text(activeConversation?.title ?? 'Vision Chat'),
-            centerTitle: false,
+            title: Text(activeConversation?.title ?? 'Lilly'),
             actions: [
               IconButton(
-                onPressed: _clearCurrentChat,
-                icon: const Icon(Icons.delete_outline_rounded),
-              ),
-              IconButton(
                 onPressed: _openSettings,
-                icon: const Icon(Icons.settings_rounded),
+                icon: const Icon(Icons.tune_rounded),
               ),
             ],
           ),
-          body: _conversationListController.isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : Column(
-                  children: [
-                    if (_chatController.errorMessage != null)
-                      ErrorMessageBanner(
-                        message: _chatController.errorMessage!,
-                        onDismiss: _chatController.dismissError,
-                      ),
-                    Expanded(
-                      child: MessageList(
-                        messages: _chatController.messages,
-                        scrollController: _chatController.scrollController,
-                        isLoading: _chatController.isSending,
-                      ),
-                    ),
-                    MessageInputBar(
-                      controller: _textController,
-                      selectedImage: _enableImageInput
-                          ? _chatController.selectedImage
-                          : null,
-                      isSending: _chatController.isSending,
-                      onPickImage: _showImageSourceSheet,
-                      onRemoveImage: _chatController.removeSelectedImage,
-                      onSend: _sendMessage,
-                    ),
-                  ],
+          body: Column(
+            children: [
+              if (_chatController.errorMessage != null)
+                ErrorMessageBanner(
+                  message: _chatController.errorMessage!,
+                  onDismiss: _chatController.dismissError,
                 ),
+              Expanded(
+                child: MessageList(
+                  messages: _chatController.messages,
+                  scrollController: _chatController.scrollController,
+                  isLoading: _chatController.isSending,
+                ),
+              ),
+              MessageInputBar(
+                controller: _textController,
+                selectedImage: _chatController.selectedImage,
+                isSending: _chatController.isSending,
+                onPickImage: _showImageSourceSheet,
+                onRemoveImage: _chatController.removeSelectedImage,
+                onSend: _sendMessage,
+              ),
+            ],
+          ),
+          floatingActionButton: activeConversation == null
+              ? FloatingActionButton.extended(
+                  onPressed: _createNewChat,
+                  icon: const Icon(Icons.add_comment_rounded),
+                  label: const Text('New Chat'),
+                )
+              : null,
         );
       },
     );

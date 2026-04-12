@@ -20,61 +20,7 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "initializeModel" -> {
                         val path = call.argument<String>("modelPath")
-
-                        if (path.isNullOrBlank()) {
-                            modelReady = false
-                            modelPath = null
-                            modelError = "No model path was provided."
-                            result.success(
-                                mapOf(
-                                    "success" to false,
-                                    "status" to "error",
-                                    "errorMessage" to modelError
-                                )
-                            )
-                            return@setMethodCallHandler
-                        }
-
-                        val file = File(path)
-                        if (!file.exists()) {
-                            modelReady = false
-                            modelPath = null
-                            modelError = "Model file not found at: $path"
-                            result.success(
-                                mapOf(
-                                    "success" to false,
-                                    "status" to "error",
-                                    "errorMessage" to modelError
-                                )
-                            )
-                            return@setMethodCallHandler
-                        }
-
-                        if (file.length() <= 0L) {
-                            modelReady = false
-                            modelPath = null
-                            modelError = "Model file is empty or invalid."
-                            result.success(
-                                mapOf(
-                                    "success" to false,
-                                    "status" to "error",
-                                    "errorMessage" to modelError
-                                )
-                            )
-                            return@setMethodCallHandler
-                        }
-
-                        modelReady = true
-                        modelPath = path
-                        modelError = null
-
-                        result.success(
-                            mapOf(
-                                "success" to true,
-                                "status" to "ready",
-                                "errorMessage" to null
-                            )
-                        )
+                        initializeModel(path, result)
                     }
 
                     "getModelStatus" -> {
@@ -111,29 +57,11 @@ class MainActivity : FlutterActivity() {
                             return@setMethodCallHandler
                         }
 
-                        val prompt = call.argument<String>("prompt").orEmpty()
-                        val imagePath = call.argument<String>("imagePath")
-                        val hasImage = !imagePath.isNullOrBlank()
-
-                        val responseText = when {
-                            hasImage && prompt.isNotBlank() ->
-                                "Android native bridge is using model file at $modelPath. Real Gemma image+text inference is the next step."
-
-                            hasImage ->
-                                "Android native bridge is using model file at $modelPath. Real Gemma image inference is the next step."
-
-                            prompt.isNotBlank() ->
-                                "Android native bridge is using model file at $modelPath. Real Gemma text inference is the next step for: \"$prompt\""
-
-                            else ->
-                                "Android native model file is linked and ready."
-                        }
-
                         result.success(
                             mapOf(
-                                "success" to true,
-                                "text" to responseText,
-                                "errorMessage" to null
+                                "success" to false,
+                                "text" to "",
+                                "errorMessage" to "LiteRT-LM custom Android integration is not implemented yet in Lilly. The current MediaPipe path cannot run .litertlm models."
                             )
                         )
                     }
@@ -141,5 +69,77 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun initializeModel(path: String?, result: MethodChannel.Result) {
+        if (path.isNullOrBlank()) {
+            modelReady = false
+            modelPath = null
+            modelError = "No model path was provided."
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "status" to "error",
+                    "errorMessage" to modelError
+                )
+            )
+            return
+        }
+
+        val file = File(path)
+        if (!file.exists()) {
+            modelReady = false
+            modelPath = null
+            modelError = "Model file not found at: $path"
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "status" to "error",
+                    "errorMessage" to modelError
+                )
+            )
+            return
+        }
+
+        if (file.length() <= 0L) {
+            modelReady = false
+            modelPath = null
+            modelError = "Model file is empty or invalid."
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "status" to "error",
+                    "errorMessage" to modelError
+                )
+            )
+            return
+        }
+
+        if (path.endsWith(".litertlm")) {
+            modelReady = false
+            modelPath = path
+            modelError =
+                "This Lilly build still uses the MediaPipe model bridge. .litertlm requires a custom LiteRT-LM Android integration, which is not wired yet."
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "status" to "error",
+                    "errorMessage" to modelError
+                )
+            )
+            return
+        }
+
+        modelReady = true
+        modelPath = path
+        modelError = null
+
+        result.success(
+            mapOf(
+                "success" to true,
+                "status" to "ready",
+                "errorMessage" to null
+            )
+        )
     }
 }

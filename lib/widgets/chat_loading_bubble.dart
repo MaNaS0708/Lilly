@@ -33,7 +33,7 @@ class _ChatLoadingBubbleState extends State<ChatLoadingBubble>
           border: Border.all(color: Colors.black12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -53,7 +53,7 @@ class _ChatLoadingBubbleState extends State<ChatLoadingBubble>
                   height: 10,
                   margin: EdgeInsets.only(right: index == 2 ? 0 : 6),
                   decoration: BoxDecoration(
-                    color: Colors.indigo.withOpacity(scale.clamp(0.35, 1.0)),
+                    color: Colors.indigo.withValues(alpha: scale.clamp(0.35, 1.0)),
                     shape: BoxShape.circle,
                   ),
                 );

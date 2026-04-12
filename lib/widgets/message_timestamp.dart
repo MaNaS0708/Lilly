@@ -24,7 +24,7 @@ class MessageTimestamp extends StatelessWidget {
       child: Text(
         _formatTime(timestamp),
         style: TextStyle(
-          color: color.withOpacity(0.75),
+          color: color.withValues(alpha: 0.75),
           fontSize: 11,
           fontWeight: FontWeight.w500,
         ),

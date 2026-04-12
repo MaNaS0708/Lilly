@@ -33,7 +33,7 @@ class ErrorMessageBanner extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
+            child: SelectableText(
               message,
               style: const TextStyle(
                 color: Color(0xFF881337),
