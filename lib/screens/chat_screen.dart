@@ -7,6 +7,7 @@ import '../controllers/conversation_list_controller.dart';
 import '../controllers/model_controller.dart';
 import '../services/image_picker_service.dart';
 import '../services/settings_service.dart';
+import '../widgets/confirm_action_dialog.dart';
 import '../widgets/conversation_drawer.dart';
 import '../widgets/error_message_banner.dart';
 import '../widgets/message_input_bar.dart';

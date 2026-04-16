@@ -1,11 +1,12 @@
-import UIKit
-import Flutter
 
-@main
+import Flutter
+import UIKit
+
+
 @objc class AppDelegate: FlutterAppDelegate {
   private let channelName = "lilly/model"
   private let unsupportedMessage =
-    "Direct LiteRT-LM integration for Lilly on iOS is not implemented yet."
+    "Lilly Gemma 4 local inference is currently implemented for Android first. iOS integration is not wired yet."
 
   override func application(
     _ application: UIApplication,

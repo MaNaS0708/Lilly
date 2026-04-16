@@ -38,5 +38,5 @@ flutter {
 }
 
 dependencies {
-    implementation("com.google.mediapipe:tasks-genai:0.10.27")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.9.0")
 }
