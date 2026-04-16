@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../controllers/model_controller.dart';
 import '../models/model_status.dart';
+import '../services/model_file_service.dart';
 import '../services/settings_service.dart';
+import '../widgets/confirm_action_dialog.dart';
+import 'splash_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   static const String routeName = '/settings';
@@ -16,11 +19,13 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final SettingsService _settingsService = SettingsService();
+  final ModelFileService _modelFileService = ModelFileService();
 
   bool _saveChatsLocally = true;
   bool _enableImageInput = true;
   bool _showDebugInfo = false;
   bool _loading = true;
+  ModelFileInfo? _modelInfo;
 
   ModelController? get _modelController => widget.modelController;
 
@@ -34,13 +39,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final saveChats = await _settingsService.getSaveChatsLocally();
     final enableImages = await _settingsService.getEnableImageInput();
     final showDebug = await _settingsService.getShowDebugInfo();
+    final modelInfo = await _modelFileService.inspectModelFile(strict: true);
 
     setState(() {
       _saveChatsLocally = saveChats;
       _enableImageInput = enableImages;
       _showDebugInfo = showDebug;
+      _modelInfo = modelInfo;
       _loading = false;
     });
+  }
+
+  Future<void> _refreshModelDetails() async {
+    await _modelController?.refreshStatus();
+    final modelInfo = await _modelFileService.inspectModelFile(strict: true);
+    if (!mounted) return;
+
+    setState(() {
+      _modelInfo = modelInfo;
+    });
+  }
+
+  Future<void> _retryModelInit() async {
+    if (_modelController == null) return;
+    await _modelController!.initialize();
+    await _refreshModelDetails();
+  }
+
+  Future<void> _deleteLocalModel() async {
+    final shouldDelete = await ConfirmActionDialog.show(
+      context,
+      title: 'Delete local model?',
+      message:
+          'This removes the downloaded Gemma model from this device. Lilly will need to download it again.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+    );
+
+    if (!shouldDelete) return;
+
+    await _modelController?.shutdown();
+    await _modelFileService.deleteModelIfExists();
+
+    if (!mounted) return;
+
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(SplashScreen.routeName, (route) => false);
   }
 
   String _statusLabel(ModelStatus? status) {
@@ -71,6 +116,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  String _formatBytes(int bytes) {
+    if (bytes <= 0) return '0 MB';
+    const mb = 1024 * 1024;
+    const gb = 1024 * 1024 * 1024;
+
+    if (bytes >= gb) {
+      return '${(bytes / gb).toStringAsFixed(2)} GB';
+    }
+    return '${(bytes / mb).toStringAsFixed(0)} MB';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -79,12 +135,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
     }
 
-    final modelStatus = _modelController?.status;
-    final modelError = _modelController?.errorMessage;
-
     return AnimatedBuilder(
       animation: _modelController ?? ValueNotifier(0),
       builder: (context, _) {
+        final modelStatus = _modelController?.status;
+        final modelError = _modelController?.errorMessage;
+        final modelInfo = _modelInfo;
+
         return Scaffold(
           appBar: AppBar(
             title: const Text('Settings'),
@@ -133,7 +190,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Show debug info'),
                       subtitle: const Text(
-                        'Helpful later when integrating the local model.',
+                        'Show model file details and runtime state.',
                       ),
                       value: _showDebugInfo,
                       onChanged: (value) async {
@@ -155,6 +212,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 16),
               _SettingsCard(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ListTile(
                       contentPadding: EdgeInsets.zero,
@@ -165,6 +223,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         color: _statusColor(modelStatus),
                       ),
                     ),
+                    if (modelInfo != null) ...[
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Model file'),
+                        subtitle: Text(modelInfo.exists ? 'Present' : 'Missing'),
+                      ),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Model size'),
+                        subtitle: Text(_formatBytes(modelInfo.sizeBytes)),
+                      ),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Validation'),
+                        subtitle: Text(
+                          modelInfo.isValid ? 'Valid' : 'Missing or invalid',
+                        ),
+                      ),
+                    ],
                     if (modelError != null && modelError.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
@@ -173,15 +250,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           style: const TextStyle(color: Colors.red),
                         ),
                       ),
-                    if (_modelController != null)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: FilledButton.icon(
-                          onPressed: () => _modelController!.initialize(),
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: const Text('Retry model init'),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        if (_modelController != null)
+                          FilledButton.icon(
+                            onPressed: _retryModelInit,
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('Retry model init'),
+                          ),
+                        OutlinedButton.icon(
+                          onPressed: _refreshModelDetails,
+                          icon: const Icon(Icons.sync_rounded),
+                          label: const Text('Refresh status'),
                         ),
+                        OutlinedButton.icon(
+                          onPressed: _deleteLocalModel,
+                          icon: const Icon(Icons.delete_outline_rounded),
+                          label: const Text('Delete local model'),
+                        ),
+                      ],
+                    ),
+                    if (_showDebugInfo && modelInfo != null) ...[
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Debug info',
+                        style: TextStyle(fontWeight: FontWeight.w700),
                       ),
+                      const SizedBox(height: 8),
+                      SelectableText(
+                        modelInfo.path,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -15,4 +15,9 @@ class ModelSetupConstants {
       'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm';
 
   static const String oauthScope = 'openid profile gated-repos';
+
+  static const int expectedModelBytes = 3654467584;
+  static const int minimumValidModelBytes = 3600000000;
+  static const String expectedSha256 =
+      'f335f2bfd1b758dc6476db16c0f41854bd6237e2658d604cbe566bcefd00a7bc';
 }

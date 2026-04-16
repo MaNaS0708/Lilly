@@ -23,8 +23,11 @@ class ModelController extends ChangeNotifier {
 
   bool get isReady => _status == ModelStatus.ready;
   bool get hasError => _status == ModelStatus.error;
+  bool get isLoading => _status == ModelStatus.loading;
 
   Future<void> initialize() async {
+    if (_status == ModelStatus.loading) return;
+
     _errorMessage = null;
     _status = ModelStatus.loading;
     notifyListeners();
@@ -42,6 +45,12 @@ class ModelController extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  Future<bool> ensureReady() async {
+    if (isReady) return true;
+    await initialize();
+    return isReady;
   }
 
   Future<ModelResult> generateResponse(ModelRequest request) async {
@@ -69,7 +78,9 @@ class ModelController extends ChangeNotifier {
   }
 
   Future<void> refreshStatus() async {
-    _status = await _modelService.getStatus();
+    try {
+      _status = await _modelService.getStatus();
+    } catch (_) {}
     notifyListeners();
   }
 

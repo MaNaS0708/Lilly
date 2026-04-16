@@ -40,7 +40,8 @@ class ModelSetupController extends ChangeNotifier {
   ModelDownloadState get state => _state;
   double get progress => _progress;
   String? get errorMessage => _errorMessage;
-  bool get canCancel => _taskId != null;
+  bool get canCancel =>
+      _state == ModelDownloadState.downloading && _taskId != null;
 
   Future<void> initialize() async {
     _state = ModelDownloadState.checking;
@@ -48,9 +49,18 @@ class ModelSetupController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final exists = await _modelFileService.modelExists();
-      if (exists) {
+      final fileInfo = await _modelFileService.inspectModelFile(strict: true);
+      if (fileInfo.isValid) {
         _state = ModelDownloadState.ready;
+        notifyListeners();
+        return;
+      }
+
+      if (fileInfo.exists && !fileInfo.isValid) {
+        await _modelFileService.deleteModelIfExists();
+        _state = ModelDownloadState.error;
+        _errorMessage =
+            'The local model file is incomplete or corrupted. Please download it again.';
         notifyListeners();
         return;
       }
@@ -71,10 +81,22 @@ class ModelSetupController extends ChangeNotifier {
               notifyListeners();
               return;
             case DownloadTaskStatus.complete:
-              _state = ModelDownloadState.ready;
-              await _storageService.markCompleted(true);
-              await _storageService.clearTaskId();
-              _taskId = null;
+              final valid = await _modelFileService.hasValidModelFile(
+                strict: true,
+              );
+              if (valid) {
+                _state = ModelDownloadState.ready;
+                await _storageService.markCompleted(true);
+                await _storageService.clearTaskId();
+                _taskId = null;
+                notifyListeners();
+                return;
+              }
+
+              await _cleanupBrokenDownloadState();
+              _state = ModelDownloadState.error;
+              _errorMessage =
+                  'Download finished, but the model file is invalid. Please download it again.';
               notifyListeners();
               return;
             case DownloadTaskStatus.failed:
@@ -93,7 +115,7 @@ class ModelSetupController extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       _state = ModelDownloadState.error;
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
       notifyListeners();
     }
   }
@@ -101,6 +123,13 @@ class ModelSetupController extends ChangeNotifier {
   Future<void> startSetup() async {
     _errorMessage = null;
     notifyListeners();
+
+    final valid = await _modelFileService.hasValidModelFile(strict: true);
+    if (valid) {
+      _state = ModelDownloadState.ready;
+      notifyListeners();
+      return;
+    }
 
     if (_taskId != null) {
       await _cleanupBrokenDownloadState();
@@ -178,7 +207,27 @@ class ModelSetupController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> cancelDownload() async {
+    if (_taskId != null) {
+      await _modelDownloadManager.cancelDownload(_taskId!);
+    }
+    await _cleanupBrokenDownloadState();
+
+    _state = ModelDownloadState.needsDownload;
+    _errorMessage = null;
+    notifyListeners();
+  }
+
+  Future<void> openLicensePage() async {
+    await launchUrl(
+      Uri.parse(ModelSetupConstants.modelCardUrl),
+      mode: LaunchMode.externalApplication,
+    );
+  }
+
   Future<void> _startDownload() async {
+    await _cleanupBrokenDownloadState(removeTask: false);
+
     _state = ModelDownloadState.downloading;
     _progress = 0;
     _errorMessage = null;
@@ -199,25 +248,15 @@ class ModelSetupController extends ChangeNotifier {
     await _storageService.saveTaskId(taskId);
   }
 
-  Future<void> cancelDownload() async {
-    if (_taskId != null) {
-      await _modelDownloadManager.cancelDownload(_taskId!);
+  Future<void> _cleanupBrokenDownloadState({bool removeTask = true}) async {
+    final currentTaskId = _taskId;
+    if (removeTask && currentTaskId != null) {
+      await _modelDownloadManager.removeTask(
+        currentTaskId,
+        shouldDeleteContent: true,
+      );
     }
-    await _cleanupBrokenDownloadState();
 
-    _state = ModelDownloadState.needsDownload;
-    _errorMessage = null;
-    notifyListeners();
-  }
-
-  Future<void> openLicensePage() async {
-    await launchUrl(
-      Uri.parse(ModelSetupConstants.modelCardUrl),
-      mode: LaunchMode.externalApplication,
-    );
-  }
-
-  Future<void> _cleanupBrokenDownloadState() async {
     await _storageService.reset();
     await _modelFileService.deleteModelIfExists();
     _taskId = null;
@@ -235,10 +274,18 @@ class ModelSetupController extends ChangeNotifier {
         _state = ModelDownloadState.downloading;
         break;
       case DownloadTaskStatus.complete:
-        _state = ModelDownloadState.ready;
-        await _storageService.markCompleted(true);
-        await _storageService.clearTaskId();
-        _taskId = null;
+        final valid = await _modelFileService.hasValidModelFile(strict: true);
+        if (valid) {
+          _state = ModelDownloadState.ready;
+          await _storageService.markCompleted(true);
+          await _storageService.clearTaskId();
+          _taskId = null;
+        } else {
+          await _cleanupBrokenDownloadState();
+          _state = ModelDownloadState.error;
+          _errorMessage =
+              'Download completed, but the model file did not validate. Please try again.';
+        }
         break;
       case DownloadTaskStatus.failed:
         await _cleanupBrokenDownloadState();

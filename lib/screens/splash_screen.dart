@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config/model_setup_constants.dart';
 import '../controllers/model_setup_controller.dart';
 import '../models/model_download_state.dart';
 import 'chat_screen.dart';
@@ -90,7 +91,7 @@ class _SplashScreenState extends State<SplashScreen> {
       case ModelDownloadState.checking:
         return 'Checking whether the offline model is already available on this device.';
       case ModelDownloadState.needsDownload:
-        return 'The model needs to be downloaded once. After that, Lilly works offline.';
+        return 'Lilly needs a one-time ${_formatBytes(ModelSetupConstants.expectedModelBytes)} download. After that, chat works offline.';
       case ModelDownloadState.authenticating:
         return 'Sign in to Hugging Face so Lilly can access the model.';
       case ModelDownloadState.awaitingLicenseAcceptance:
@@ -112,7 +113,7 @@ class _SplashScreenState extends State<SplashScreen> {
       case ModelDownloadState.awaitingLicenseAcceptance:
         return 'Open License Page';
       case ModelDownloadState.error:
-        return 'Start Again';
+        return 'Try Again';
       default:
         return null;
     }
@@ -127,6 +128,18 @@ class _SplashScreenState extends State<SplashScreen> {
       return 'Cancel Download';
     }
     return null;
+  }
+
+  String _progressLabel() {
+    final expected = ModelSetupConstants.expectedModelBytes;
+    final current = (expected * _modelSetupController.progress).round();
+    return '${_formatBytes(current)} / ${_formatBytes(expected)}';
+  }
+
+  String _formatBytes(int bytes) {
+    const gb = 1024 * 1024 * 1024;
+    if (bytes <= 0) return '0 GB';
+    return '${(bytes / gb).toStringAsFixed(2)} GB';
   }
 
   @override
@@ -222,6 +235,14 @@ class _SplashScreenState extends State<SplashScreen> {
                         style: TextStyle(
                           color: Colors.grey.shade700,
                           fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _progressLabel(),
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 13,
                         ),
                       ),
                     ],

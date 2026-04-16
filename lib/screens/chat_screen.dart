@@ -57,7 +57,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-
   @override
   void dispose() {
     _textController.dispose();
@@ -150,12 +149,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (text.isEmpty && !hasImage) return;
 
-    if (!_modelController.isReady) {
-      await _modelController.initialize();
-
-      if (!_modelController.isReady) {
-        return;
-      }
+    final ready = await _modelController.ensureReady();
+    if (!ready) {
+      return;
     }
 
     final updatedConversation = await _chatController.sendMessage(text);
@@ -164,7 +160,6 @@ class _ChatScreenState extends State<ChatScreen> {
       await _conversationListController.upsertConversation(updatedConversation);
     }
   }
-
 
   Future<void> _createNewChat() async {
     final conversation = await _conversationListController.createNewConversation();
@@ -277,13 +272,15 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: MessageList(
                   messages: _chatController.messages,
                   scrollController: _chatController.scrollController,
-                  isLoading: _chatController.isSending,
+                  isLoading: _chatController.isSending ||
+                      _modelController.isLoading,
                 ),
               ),
               MessageInputBar(
                 controller: _textController,
                 selectedImage: _chatController.selectedImage,
-                isSending: _chatController.isSending,
+                isSending:
+                    _chatController.isSending || _modelController.isLoading,
                 onPickImage: _showImageSourceSheet,
                 onRemoveImage: _chatController.removeSelectedImage,
                 onSend: _sendMessage,

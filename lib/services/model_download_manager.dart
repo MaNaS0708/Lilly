@@ -7,15 +7,15 @@ import '../config/model_setup_constants.dart';
 import 'model_file_service.dart';
 
 class ModelDownloadSnapshot {
-  final String? taskId;
-  final DownloadTaskStatus status;
-  final int progress;
-
   const ModelDownloadSnapshot({
     required this.taskId,
     required this.status,
     required this.progress,
   });
+
+  final String? taskId;
+  final DownloadTaskStatus status;
+  final int progress;
 }
 
 class ModelDownloadManager {
@@ -65,8 +65,23 @@ class ModelDownloadManager {
   }
 
   Future<void> cancelDownload(String taskId) async {
-    await FlutterDownloader.cancel(taskId: taskId);
-    await FlutterDownloader.remove(taskId: taskId, shouldDeleteContent: true);
+    try {
+      await FlutterDownloader.cancel(taskId: taskId);
+    } catch (_) {}
+
+    await removeTask(taskId, shouldDeleteContent: true);
+  }
+
+  Future<void> removeTask(
+    String taskId, {
+    bool shouldDeleteContent = true,
+  }) async {
+    try {
+      await FlutterDownloader.remove(
+        taskId: taskId,
+        shouldDeleteContent: shouldDeleteContent,
+      );
+    } catch (_) {}
   }
 
   Future<ModelDownloadSnapshot?> findTask(String taskId) async {
