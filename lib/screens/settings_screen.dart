@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../controllers/model_controller.dart';
 import '../models/model_status.dart';
@@ -101,7 +102,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ).pushNamedAndRemoveUntil(SplashScreen.routeName, (route) => false);
   }
 
+  Future<bool> _ensureTriggerPermissions() async {
+    final micStatus = await Permission.microphone.request();
+    if (!micStatus.isGranted) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Microphone permission is required.')),
+      );
+      return false;
+    }
+
+    final notificationStatus = await Permission.notification.request();
+    if (!notificationStatus.isGranted && !notificationStatus.isLimited) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Notification permission is recommended for the foreground service.'),
+        ),
+      );
+    }
+
+    return true;
+  }
+
   Future<void> _startTriggerService() async {
+    final allowed = await _ensureTriggerPermissions();
+    if (!allowed) return;
+
     setState(() => _triggerBusy = true);
     await _triggerService.startForegroundTrigger();
     await _refreshModelDetails();
@@ -136,14 +163,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Color _statusColor(ModelStatus? status) {
     switch (status) {
       case ModelStatus.ready:
-        return Colors.green;
+        return const Color(0xFF15803D);
       case ModelStatus.loading:
-        return Colors.orange;
+        return const Color(0xFFD97706);
       case ModelStatus.error:
-        return Colors.red;
+        return const Color(0xFFDC2626);
       case ModelStatus.uninitialized:
       default:
-        return Colors.grey;
+        return const Color(0xFF6B7280);
     }
   }
 
@@ -179,25 +206,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: const Text('Settings'),
           ),
           body: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             children: [
-              const Text(
-                'App Preferences',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 16),
+              _SectionTitle('Preferences'),
+              const SizedBox(height: 12),
               _SettingsCard(
                 child: Column(
                   children: [
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Save chats locally'),
-                      subtitle: const Text(
-                        'Keep conversations on device for future viewing.',
-                      ),
+                      subtitle: const Text('Keep conversations on this device.'),
                       value: _saveChatsLocally,
                       onChanged: (value) async {
                         setState(() => _saveChatsLocally = value);
@@ -208,9 +227,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Enable image input'),
-                      subtitle: const Text(
-                        'Allow camera and gallery image attachments in chat.',
-                      ),
+                      subtitle: const Text('Allow camera and gallery attachments.'),
                       value: _enableImageInput,
                       onChanged: (value) async {
                         setState(() => _enableImageInput = value);
@@ -221,9 +238,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Show debug info'),
-                      subtitle: const Text(
-                        'Show model file details and runtime state.',
-                      ),
+                      subtitle: const Text('Show model and trigger diagnostics.'),
                       value: _showDebugInfo,
                       onChanged: (value) async {
                         setState(() => _showDebugInfo = value);
@@ -234,83 +249,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              const Text(
-                'Model',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 16),
+              _SectionTitle('Local Model'),
+              const SizedBox(height: 12),
               _SettingsCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Local model status'),
-                      subtitle: Text(_statusLabel(modelStatus)),
-                      trailing: Icon(
-                        Icons.memory_rounded,
-                        color: _statusColor(modelStatus),
-                      ),
+                    _InfoRow(
+                      title: 'Status',
+                      value: _statusLabel(modelStatus),
+                      trailingColor: _statusColor(modelStatus),
                     ),
                     if (modelInfo != null) ...[
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Model file'),
-                        subtitle: Text(modelInfo.exists ? 'Present' : 'Missing'),
+                      _InfoRow(
+                        title: 'Model file',
+                        value: modelInfo.exists ? 'Present' : 'Missing',
                       ),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Model size'),
-                        subtitle: Text(_formatBytes(modelInfo.sizeBytes)),
+                      _InfoRow(
+                        title: 'Size',
+                        value: _formatBytes(modelInfo.sizeBytes),
                       ),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Validation'),
-                        subtitle: Text(
-                          modelInfo.isValid ? 'Valid' : 'Missing or invalid',
-                        ),
+                      _InfoRow(
+                        title: 'Validation',
+                        value: modelInfo.isValid ? 'Valid' : 'Missing or invalid',
                       ),
                     ],
                     if (modelError != null && modelError.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.only(top: 8, bottom: 12),
                         child: SelectableText(
                           modelError,
-                          style: const TextStyle(color: Colors.red),
+                          style: const TextStyle(color: Color(0xFFDC2626)),
                         ),
                       ),
                     Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
+                      spacing: 10,
+                      runSpacing: 10,
                       children: [
-                        if (_modelController != null)
-                          FilledButton.icon(
-                            onPressed: _retryModelInit,
-                            icon: const Icon(Icons.refresh_rounded),
-                            label: const Text('Retry model init'),
-                          ),
+                        FilledButton.icon(
+                          onPressed: _retryModelInit,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Retry init'),
+                        ),
                         OutlinedButton.icon(
                           onPressed: _refreshModelDetails,
                           icon: const Icon(Icons.sync_rounded),
-                          label: const Text('Refresh status'),
+                          label: const Text('Refresh'),
                         ),
                         OutlinedButton.icon(
                           onPressed: _deleteLocalModel,
                           icon: const Icon(Icons.delete_outline_rounded),
-                          label: const Text('Delete local model'),
+                          label: const Text('Delete model'),
                         ),
                       ],
                     ),
                     if (_showDebugInfo && modelInfo != null) ...[
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 14),
                       const Text(
-                        'Debug info',
+                        'Debug path',
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       SelectableText(
                         modelInfo.path,
                         style: const TextStyle(fontSize: 13),
@@ -320,76 +319,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              const Text(
-                'Trigger & Background',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 16),
+              _SectionTitle('Trigger & Background'),
+              const SizedBox(height: 12),
               _SettingsCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Android trigger scaffold'),
-                      subtitle: Text(
-                        trigger?.platformSupported == true
-                            ? 'Available on this platform'
-                            : 'Not supported on this platform',
-                      ),
+                    _InfoRow(
+                      title: 'Platform support',
+                      value: trigger?.platformSupported == true
+                          ? 'Available on Android'
+                          : 'Not supported here',
                     ),
-                    if (trigger != null) ...[
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Foreground service'),
-                        subtitle: Text(
-                          trigger.isRunning ? 'Running' : 'Stopped',
-                        ),
-                      ),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Wake word engine'),
-                        subtitle: Text(
-                          trigger.wakeWordReady
-                              ? 'Connected'
-                              : 'Groundwork only, not wired yet',
-                        ),
-                      ),
-                      if (trigger.notes.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: SelectableText(
-                            trigger.notes,
-                            style: TextStyle(
-                              color: Colors.grey.shade700,
-                              height: 1.4,
-                            ),
+                    _InfoRow(
+                      title: 'Foreground service',
+                      value: trigger?.isRunning == true ? 'Running' : 'Stopped',
+                    ),
+                    _InfoRow(
+                      title: 'Wake word',
+                      value: trigger?.wakeWordReady == true
+                          ? 'Connected'
+                          : 'Groundwork only',
+                    ),
+                    if (trigger != null && trigger.notes.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8, bottom: 12),
+                        child: SelectableText(
+                          trigger.notes,
+                          style: const TextStyle(
+                            color: Color(0xFF4B5563),
+                            height: 1.4,
                           ),
                         ),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          FilledButton.icon(
-                            onPressed: _triggerBusy || trigger.isRunning
-                                ? null
-                                : _startTriggerService,
-                            icon: const Icon(Icons.play_arrow_rounded),
-                            label: const Text('Start service'),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: _triggerBusy || !trigger.isRunning
-                                ? null
-                                : _stopTriggerService,
-                            icon: const Icon(Icons.stop_rounded),
-                            label: const Text('Stop service'),
-                          ),
-                        ],
                       ),
-                    ],
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: _triggerBusy || (trigger?.isRunning ?? false)
+                              ? null
+                              : _startTriggerService,
+                          icon: const Icon(Icons.play_arrow_rounded),
+                          label: const Text('Start service'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _triggerBusy || !(trigger?.isRunning ?? false)
+                              ? null
+                              : _stopTriggerService,
+                          icon: const Icon(Icons.stop_rounded),
+                          label: const Text('Stop service'),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -397,6 +379,74 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 20,
+        fontWeight: FontWeight.w800,
+        color: Color(0xFF111827),
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({
+    required this.title,
+    required this.value,
+    this.trailingColor,
+  });
+
+  final String title;
+  final String value;
+  final Color? trailingColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF111827),
+              ),
+            ),
+          ),
+          if (trailingColor != null) ...[
+            Container(
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: trailingColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ],
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(color: Color(0xFF4B5563)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -411,11 +461,18 @@ class _SettingsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.black12),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A111827),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       child: child,
     );

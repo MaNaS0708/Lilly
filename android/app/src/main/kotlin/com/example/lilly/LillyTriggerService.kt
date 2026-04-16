@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -29,7 +30,18 @@ class LillyTriggerService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         isRunning = true
-        startForeground(NOTIFICATION_ID, buildNotification())
+        val notification = buildNotification()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+
         return START_STICKY
     }
 
@@ -49,8 +61,8 @@ class LillyTriggerService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("Lilly trigger service")
-            .setContentText("Foreground trigger scaffold is active. Wake-word engine is not attached yet.")
+            .setContentTitle("Lilly background listening")
+            .setContentText("Trigger groundwork is active. Wake-word engine is not attached yet.")
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)
