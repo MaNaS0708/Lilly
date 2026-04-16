@@ -358,10 +358,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           : 'Disabled',
                     ),
                     _InfoRow(
-                      title: 'Wake word',
-                      value: trigger?.wakeWordReady == true
-                          ? 'Connected'
-                          : 'Not wired yet',
+                      title: 'Trigger type',
+                      value: 'Volume-up long press',
                     ),
                     const SizedBox(height: 8),
                     if (trigger != null && trigger.notes.isNotEmpty)
@@ -372,6 +370,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           height: 1.4,
                         ),
                       ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'How to use',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Press volume up rapidly about 3 times within 1 second while the trigger service is active. Lilly will try to open. This is best-effort and may vary by device.',
+                      style: TextStyle(
+                        color: Color(0xFF4B5563),
+                        height: 1.4,
+                      ),
+                    ),
                     if (_triggerBusy) ...[
                       const SizedBox(height: 14),
                       const LinearProgressIndicator(),

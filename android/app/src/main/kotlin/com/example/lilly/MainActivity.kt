@@ -104,7 +104,7 @@ class MainActivity : FlutterActivity() {
                                 "microphonePermissionRecommended" to true,
                                 "isRunning" to LillyTriggerService.isRunning,
                                 "autostartEnabled" to preferences.isAutostartEnabled(),
-                                "notes" to "This service is intentionally lightweight. It stays alive in the background and auto-restarts, but the Gemma model is not kept in memory all the time. Wake-word detection will be attached here next.",
+                                "notes" to "Foreground trigger is active. Current shortcut is a best-effort volume-up long press using an active media session. This is device-dependent and not as reliable as a dedicated wake-word engine.",
                             )
                         )
                     }
@@ -133,11 +133,7 @@ class MainActivity : FlutterActivity() {
                             preferences.setAutostartEnabled(true)
                             val intent = Intent(this, LillyTriggerService::class.java)
                             ContextCompat.startForegroundService(this, intent)
-                            result.success(
-                                mapOf(
-                                    "success" to true,
-                                )
-                            )
+                            result.success(mapOf("success" to true))
                         } catch (e: Exception) {
                             result.success(
                                 mapOf(
@@ -153,11 +149,7 @@ class MainActivity : FlutterActivity() {
                             preferences.setAutostartEnabled(false)
                             val intent = Intent(this, LillyTriggerService::class.java)
                             stopService(intent)
-                            result.success(
-                                mapOf(
-                                    "success" to true,
-                                )
-                            )
+                            result.success(mapOf("success" to true))
                         } catch (e: Exception) {
                             result.success(
                                 mapOf(
