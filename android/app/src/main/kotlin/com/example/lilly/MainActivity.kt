@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.app.NotificationManager
 import android.content.Intent
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import androidx.core.content.ContextCompat
@@ -44,6 +45,18 @@ class MainActivity : FlutterActivity() {
     private var modelPath: String? = null
     private var modelError: String? = null
     private var activeBackend: String = "uninitialized"
+    private var pendingLaunchAction: String? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        updatePendingLaunchAction(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        updatePendingLaunchAction(intent)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -104,7 +117,7 @@ class MainActivity : FlutterActivity() {
                                 "microphonePermissionRecommended" to true,
                                 "isRunning" to LillyTriggerService.isRunning,
                                 "autostartEnabled" to preferences.isAutostartEnabled(),
-                                "notes" to "Foreground trigger is active. Current shortcut is a best-effort volume-up long press using an active media session. This is device-dependent and not as reliable as a dedicated wake-word engine.",
+                                "notes" to "The reliable trigger is now the persistent notification. Use Open Lilly or Start Voice Chat. Vosk will be connected to the voice-chat path next.",
                             )
                         )
                     }
@@ -126,6 +139,12 @@ class MainActivity : FlutterActivity() {
                                 "enabled" to enabled,
                             )
                         )
+                    }
+
+                    "consumePendingLaunchAction" -> {
+                        val action = pendingLaunchAction
+                        pendingLaunchAction = null
+                        result.success(mapOf("action" to action))
                     }
 
                     "startTriggerService" -> {
@@ -163,6 +182,14 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun updatePendingLaunchAction(intent: Intent?) {
+        pendingLaunchAction = when {
+            intent?.getBooleanExtra("open_voice_chat", false) == true -> "voice_chat"
+            intent?.getBooleanExtra("open_app_only", false) == true -> "open_app"
+            else -> pendingLaunchAction
+        }
     }
 
     private fun initializeModel(path: String?, result: MethodChannel.Result) {

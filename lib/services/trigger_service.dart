@@ -54,4 +54,11 @@ class TriggerService {
     );
     return result?['success'] == true;
   }
+
+  Future<String?> consumePendingLaunchAction() async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'consumePendingLaunchAction',
+    );
+    return result?['action'] as String?;
+  }
 }

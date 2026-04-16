@@ -7,6 +7,7 @@ import '../controllers/conversation_list_controller.dart';
 import '../controllers/model_controller.dart';
 import '../services/image_picker_service.dart';
 import '../services/settings_service.dart';
+import '../services/trigger_service.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/conversation_drawer.dart';
 import '../widgets/error_message_banner.dart';
@@ -27,6 +28,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
   final SettingsService _settingsService = SettingsService();
+  final TriggerService _triggerService = TriggerService();
 
   late final ModelController _modelController;
   late final ChatController _chatController;
@@ -52,10 +54,40 @@ class _ChatScreenState extends State<ChatScreen> {
     _chatController.attachConversation(freshConversation);
 
     await _modelController.initialize();
+    await _consumePendingTriggerAction();
 
     if (mounted) {
       setState(() {});
     }
+  }
+
+  Future<void> _consumePendingTriggerAction() async {
+    final action = await _triggerService.consumePendingLaunchAction();
+    if (!mounted || action == null) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      switch (action) {
+        case 'voice_chat':
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Voice trigger received. Vosk voice capture will plug in here next.',
+              ),
+            ),
+          );
+          break;
+        case 'open_app':
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Lilly opened from assistant trigger.'),
+              duration: Duration(milliseconds: 1200),
+            ),
+          );
+          break;
+      }
+    });
   }
 
   @override

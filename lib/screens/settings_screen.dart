@@ -359,7 +359,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     _InfoRow(
                       title: 'Trigger type',
-                      value: 'Volume-up long press',
+                      value: 'Notification action',
                     ),
                     const SizedBox(height: 8),
                     if (trigger != null && trigger.notes.isNotEmpty)
@@ -380,7 +380,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Press volume up rapidly about 3 times within 1 second while the trigger service is active. Lilly will try to open. This is best-effort and may vary by device.',
+                      'Use the persistent notification actions to open Lilly or enter the future voice-chat path. This is the reliable trigger we will connect to Vosk next.',
                       style: TextStyle(
                         color: Color(0xFF4B5563),
                         height: 1.4,
