@@ -47,10 +47,11 @@ class _ChatScreenState extends State<ChatScreen> {
     _enableImageInput = await _settingsService.getEnableImageInput();
     await _conversationListController.load();
 
-    final selected = _conversationListController.selectedConversation;
-    if (selected != null) {
-      _chatController.attachConversation(selected);
-    }
+    final freshConversation =
+        await _conversationListController.createNewConversation();
+    _chatController.attachConversation(freshConversation);
+
+    await _modelController.initialize();
 
     if (mounted) {
       setState(() {});
