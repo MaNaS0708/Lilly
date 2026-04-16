@@ -1,18 +1,19 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/chat_message.dart';
 import '../screens/image_preview_screen.dart';
 import 'message_timestamp.dart';
 
 class ChatBubble extends StatelessWidget {
-  final ChatMessage message;
-
   const ChatBubble({
     super.key,
     required this.message,
   });
+
+  final ChatMessage message;
 
   void _openPreview(BuildContext context) {
     if (!message.hasImage) return;
@@ -20,6 +21,20 @@ class ChatBubble extends StatelessWidget {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ImagePreviewScreen(imagePath: message.imagePath!),
+      ),
+    );
+  }
+
+  Future<void> _copyMessage(BuildContext context) async {
+    if (!message.hasText) return;
+
+    await Clipboard.setData(ClipboardData(text: message.text));
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Message copied'),
+        duration: Duration(milliseconds: 1200),
       ),
     );
   }
@@ -35,7 +50,8 @@ class ChatBubble extends StatelessWidget {
         : Colors.white;
 
     final textColor = message.isUser ? Colors.white : Colors.black87;
-    final timestampColor = message.isUser ? Colors.white : Colors.black54;
+    final timestampColor = message.isUser ? Colors.white70 : Colors.black54;
+    final actionColor = message.isUser ? Colors.white70 : Colors.black54;
 
     return Column(
       crossAxisAlignment: alignment,
@@ -47,9 +63,7 @@ class ChatBubble extends StatelessWidget {
           decoration: BoxDecoration(
             color: bubbleColor,
             borderRadius: BorderRadius.circular(18),
-            border: message.isUser
-                ? null
-                : Border.all(color: Colors.black12),
+            border: message.isUser ? null : Border.all(color: Colors.black12),
             boxShadow: message.isUser
                 ? null
                 : [
@@ -100,9 +114,25 @@ class ChatBubble extends StatelessWidget {
                     height: 1.4,
                   ),
                 ),
-              MessageTimestamp(
-                timestamp: message.createdAt,
-                color: timestampColor,
+              const SizedBox(height: 6),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  MessageTimestamp(
+                    timestamp: message.createdAt,
+                    color: timestampColor,
+                  ),
+                  if (message.hasText) ...[
+                    const SizedBox(width: 4),
+                    IconButton(
+                      onPressed: () => _copyMessage(context),
+                      icon: const Icon(Icons.copy_rounded, size: 18),
+                      color: actionColor,
+                      tooltip: 'Copy message',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ],
               ),
             ],
           ),

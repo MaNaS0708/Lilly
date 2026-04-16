@@ -78,7 +78,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (image == null) return;
       _chatController.setSelectedImage(image);
     } catch (e) {
-      _chatController.showError(e.toString().replaceFirst('Exception: ', ''));
+      _chatController.showError(e.toString());
     }
   }
 
@@ -93,7 +93,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (image == null) return;
       _chatController.setSelectedImage(image);
     } catch (e) {
-      _chatController.showError(e.toString().replaceFirst('Exception: ', ''));
+      _chatController.showError(e.toString());
     }
   }
 
@@ -148,9 +148,14 @@ class _ChatScreenState extends State<ChatScreen> {
     final hasImage = _chatController.selectedImage != null;
 
     if (text.isEmpty && !hasImage) return;
+    if (_modelController.isGenerating || _modelController.isLoading) return;
 
     final ready = await _modelController.ensureReady();
     if (!ready) {
+      _chatController.showError(
+        _modelController.errorMessage ??
+            'The local model could not be prepared on this device.',
+      );
       return;
     }
 
@@ -231,6 +236,16 @@ class _ChatScreenState extends State<ChatScreen> {
     await _modelController.refreshStatus();
   }
 
+  String _loadingLabel() {
+    if (_modelController.isLoading) {
+      return 'Loading local model into memory...';
+    }
+    if (_modelController.isGenerating) {
+      return 'Lilly is thinking...';
+    }
+    return 'Working...';
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -241,6 +256,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ]),
       builder: (context, _) {
         final activeConversation = _chatController.conversation;
+        final isBusy = _chatController.isSending || _modelController.isLoading;
 
         return Scaffold(
           drawer: ConversationDrawer(
@@ -272,15 +288,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: MessageList(
                   messages: _chatController.messages,
                   scrollController: _chatController.scrollController,
-                  isLoading: _chatController.isSending ||
-                      _modelController.isLoading,
+                  isLoading: isBusy,
+                  loadingLabel: _loadingLabel(),
                 ),
               ),
               MessageInputBar(
                 controller: _textController,
                 selectedImage: _chatController.selectedImage,
-                isSending:
-                    _chatController.isSending || _modelController.isLoading,
+                isSending: isBusy,
                 onPickImage: _showImageSourceSheet,
                 onRemoveImage: _chatController.removeSelectedImage,
                 onSend: _sendMessage,

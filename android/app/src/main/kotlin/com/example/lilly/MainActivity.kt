@@ -1,7 +1,12 @@
 package com.example.lilly
 
+import android.app.ActivityManager
+import android.app.NotificationManager
+import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import androidx.core.content.ContextCompat
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
@@ -28,7 +33,8 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private val channelName = "lilly/model"
+    private val modelChannelName = "lilly/model"
+    private val triggerChannelName = "lilly/trigger"
     private val mainHandler = Handler(Looper.getMainLooper())
     private val modelExecutor = Executors.newSingleThreadExecutor()
 
@@ -42,7 +48,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, modelChannelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "initializeModel" -> {
@@ -61,7 +67,8 @@ class MainActivity : FlutterActivity() {
                         result.success(
                             mapOf(
                                 "status" to status,
-                                "errorMessage" to modelError
+                                "backend" to activeBackend,
+                                "errorMessage" to modelError,
                             )
                         )
                     }
@@ -81,6 +88,73 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, triggerChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getTriggerCapabilities" -> {
+                        result.success(
+                            mapOf(
+                                "platformSupported" to true,
+                                "backgroundServiceSupported" to true,
+                                "wakeWordReady" to false,
+                                "notificationPermissionRecommended" to (Build.VERSION.SDK_INT >= 33),
+                                "microphonePermissionRecommended" to true,
+                                "isRunning" to LillyTriggerService.isRunning,
+                                "notes" to "Foreground trigger groundwork is active on Android. Wake-word recognition is not wired yet, and power-button activation should remain behind device-specific handling.",
+                            )
+                        )
+                    }
+
+                    "getTriggerStatus" -> {
+                        result.success(
+                            mapOf(
+                                "isRunning" to LillyTriggerService.isRunning,
+                            )
+                        )
+                    }
+
+                    "startTriggerService" -> {
+                        try {
+                            val intent = Intent(this, LillyTriggerService::class.java)
+                            ContextCompat.startForegroundService(this, intent)
+                            result.success(
+                                mapOf(
+                                    "success" to true,
+                                )
+                            )
+                        } catch (e: Exception) {
+                            result.success(
+                                mapOf(
+                                    "success" to false,
+                                    "errorMessage" to (e.message ?: "Failed to start trigger service."),
+                                )
+                            )
+                        }
+                    }
+
+                    "stopTriggerService" -> {
+                        try {
+                            val intent = Intent(this, LillyTriggerService::class.java)
+                            stopService(intent)
+                            result.success(
+                                mapOf(
+                                    "success" to true,
+                                )
+                            )
+                        } catch (e: Exception) {
+                            result.success(
+                                mapOf(
+                                    "success" to false,
+                                    "errorMessage" to (e.message ?: "Failed to stop trigger service."),
+                                )
+                            )
+                        }
+                    }
+
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     private fun initializeModel(path: String?, result: MethodChannel.Result) {
@@ -93,7 +167,7 @@ class MainActivity : FlutterActivity() {
                 mapOf(
                     "success" to false,
                     "status" to "error",
-                    "errorMessage" to modelError
+                    "errorMessage" to modelError,
                 )
             )
             return
@@ -108,7 +182,7 @@ class MainActivity : FlutterActivity() {
                 mapOf(
                     "success" to false,
                     "status" to "error",
-                    "errorMessage" to modelError
+                    "errorMessage" to modelError,
                 )
             )
             return
@@ -124,7 +198,7 @@ class MainActivity : FlutterActivity() {
                 mapOf(
                     "success" to false,
                     "status" to "error",
-                    "errorMessage" to modelError
+                    "errorMessage" to modelError,
                 )
             )
             return
@@ -139,7 +213,7 @@ class MainActivity : FlutterActivity() {
                 mapOf(
                     "success" to false,
                     "status" to "error",
-                    "errorMessage" to modelError
+                    "errorMessage" to modelError,
                 )
             )
             return
@@ -150,7 +224,7 @@ class MainActivity : FlutterActivity() {
                 mapOf(
                     "success" to true,
                     "status" to "ready",
-                    "errorMessage" to null
+                    "errorMessage" to null,
                 )
             )
             return
@@ -181,7 +255,7 @@ class MainActivity : FlutterActivity() {
                     mapOf(
                         "success" to true,
                         "status" to "ready",
-                        "errorMessage" to null
+                        "errorMessage" to null,
                     )
                 )
             } catch (e: Exception) {
@@ -190,14 +264,18 @@ class MainActivity : FlutterActivity() {
                 modelLoading = false
                 modelPath = null
                 activeBackend = "failed"
-                modelError = e.message ?: "Failed to initialize LiteRT-LM engine."
+                modelError = buildString {
+                    append(e.message ?: "Failed to initialize LiteRT-LM engine.")
+                    append(" ")
+                    append(deviceDiagnostics())
+                }.trim()
 
                 postResult(
                     result,
                     mapOf(
                         "success" to false,
                         "status" to "error",
-                        "errorMessage" to modelError
+                        "errorMessage" to modelError,
                     )
                 )
             }
@@ -216,7 +294,7 @@ class MainActivity : FlutterActivity() {
 
     private fun createEngine(path: String): Pair<Engine, String> {
         val cachePath = applicationContext.cacheDir.absolutePath
-        var lastError: Exception? = null
+        val errors = mutableListOf<String>()
 
         val attempts = listOf(
             "gpu" to Backend.GPU(),
@@ -238,25 +316,27 @@ class MainActivity : FlutterActivity() {
                 newEngine.initialize()
                 return newEngine to name
             } catch (e: Exception) {
-                lastError = e
+                errors += "$name: ${e.message ?: e.javaClass.simpleName}"
             }
         }
 
-        throw lastError ?: Exception("Unable to initialize any LiteRT-LM backend.")
+        throw Exception(
+            "Unable to initialize LiteRT-LM backend. ${errors.joinToString(" | ")}"
+        )
     }
 
     private fun generateResponse(
         prompt: String,
         imagePath: String?,
         history: List<*>?,
-        result: MethodChannel.Result
+        result: MethodChannel.Result,
     ) {
         if (modelLoading) {
             result.success(
                 mapOf(
                     "success" to false,
                     "text" to "",
-                    "errorMessage" to "Model is still loading."
+                    "errorMessage" to "Model is still loading.",
                 )
             )
             return
@@ -268,7 +348,7 @@ class MainActivity : FlutterActivity() {
                 mapOf(
                     "success" to false,
                     "text" to "",
-                    "errorMessage" to "Model is not initialized on Android."
+                    "errorMessage" to "Model is not initialized on Android.",
                 )
             )
             return
@@ -279,7 +359,7 @@ class MainActivity : FlutterActivity() {
                 mapOf(
                     "success" to false,
                     "text" to "",
-                    "errorMessage" to "Gemma 4 text chat is implemented first. Image input is not wired yet on this Android path."
+                    "errorMessage" to "Gemma 4 text chat is implemented first. Image input is not wired yet on this Android path.",
                 )
             )
             return
@@ -291,7 +371,7 @@ class MainActivity : FlutterActivity() {
                 mapOf(
                     "success" to false,
                     "text" to "",
-                    "errorMessage" to "Please enter a message."
+                    "errorMessage" to "Please enter a message.",
                 )
             )
             return
@@ -323,7 +403,7 @@ class MainActivity : FlutterActivity() {
                     mapOf(
                         "success" to true,
                         "text" to responseText,
-                        "errorMessage" to null
+                        "errorMessage" to null,
                     )
                 )
             } catch (e: Exception) {
@@ -332,7 +412,7 @@ class MainActivity : FlutterActivity() {
                     mapOf(
                         "success" to false,
                         "text" to "",
-                        "errorMessage" to (e.message ?: "Gemma 4 inference failed on Android.")
+                        "errorMessage" to (e.message ?: "Gemma 4 inference failed on Android."),
                     )
                 )
             }
@@ -372,6 +452,20 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun deviceDiagnostics(): String {
+        val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+
+        val notificationsEnabled =
+            getSystemService(NotificationManager::class.java)?.areNotificationsEnabled() ?: true
+
+        val totalMemMb = memoryInfo.totalMem / (1024 * 1024)
+        val availMemMb = memoryInfo.availMem / (1024 * 1024)
+
+        return "[backend=$activeBackend totalMemMb=$totalMemMb availMemMb=$availMemMb lowRam=${activityManager.isLowRamDevice} notificationsEnabled=$notificationsEnabled sdk=${Build.VERSION.SDK_INT}]"
+    }
+
     private fun disposeModel() {
         closeEngine()
         modelReady = false
@@ -392,7 +486,7 @@ class MainActivity : FlutterActivity() {
 
     private fun postResult(
         result: MethodChannel.Result,
-        payload: Map<String, Any?>
+        payload: Map<String, Any?>,
     ) {
         mainHandler.post {
             result.success(payload)

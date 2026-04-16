@@ -6,16 +6,18 @@ import 'chat_loading_bubble.dart';
 import 'empty_chat_state.dart';
 
 class MessageList extends StatelessWidget {
-  final List<ChatMessage> messages;
-  final ScrollController scrollController;
-  final bool isLoading;
-
   const MessageList({
     super.key,
     required this.messages,
     required this.scrollController,
     required this.isLoading,
+    required this.loadingLabel,
   });
+
+  final List<ChatMessage> messages;
+  final ScrollController scrollController;
+  final bool isLoading;
+  final String loadingLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +31,7 @@ class MessageList extends StatelessWidget {
       itemCount: messages.length + (isLoading ? 1 : 0),
       itemBuilder: (context, index) {
         if (index >= messages.length) {
-          return const ChatLoadingBubble();
+          return ChatLoadingBubble(label: loadingLabel);
         }
 
         return ChatBubble(message: messages[index]);

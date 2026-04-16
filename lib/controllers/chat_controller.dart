@@ -14,7 +14,9 @@ class ChatController extends ChangeNotifier {
     ConversationTitleService? conversationTitleService,
   }) : _modelController = modelController,
        _conversationTitleService =
-           conversationTitleService ?? ConversationTitleService();
+           conversationTitleService ?? ConversationTitleService() {
+    scrollController.addListener(_handleScrollPositionChanged);
+  }
 
   final ModelController _modelController;
   final ConversationTitleService _conversationTitleService;
@@ -23,6 +25,7 @@ class ChatController extends ChangeNotifier {
   ChatConversation? _conversation;
   File? _selectedImage;
   String? _errorMessage;
+  bool _stickToBottom = true;
 
   ChatConversation? get conversation => _conversation;
   List<ChatMessage> get messages => _conversation?.messages ?? const [];
@@ -35,7 +38,7 @@ class ChatController extends ChangeNotifier {
     _selectedImage = null;
     _errorMessage = null;
     notifyListeners();
-    _scrollToBottomSoon();
+    _scrollToBottomSoon(force: true);
   }
 
   void setSelectedImage(File? image) {
@@ -50,7 +53,7 @@ class ChatController extends ChangeNotifier {
   }
 
   void showError(String message) {
-    _errorMessage = message;
+    _errorMessage = _friendlyError(message);
     notifyListeners();
   }
 
@@ -103,25 +106,12 @@ class ChatController extends ChangeNotifier {
     _selectedImage = null;
     _errorMessage = null;
     notifyListeners();
-    _scrollToBottomSoon();
+    _scrollToBottomSoon(force: true);
 
     if (!_modelController.isReady) {
-      const modelError = 'Model is not ready yet.';
-      final assistantError = ChatMessage(
-        text: modelError,
-        isUser: false,
-        createdAt: DateTime.now(),
-      );
-
-      workingConversation = workingConversation.copyWith(
-        messages: [...workingConversation.messages, assistantError],
-        updatedAt: DateTime.now(),
-      );
-
-      _conversation = workingConversation;
+      const modelError = 'Local model is still loading. Try again in a moment.';
       _errorMessage = modelError;
       notifyListeners();
-      _scrollToBottomSoon();
       return workingConversation;
     }
 
@@ -134,8 +124,9 @@ class ChatController extends ChangeNotifier {
     );
 
     if (!result.success) {
-      final failureText =
-          result.errorMessage ?? 'Failed to generate a response.';
+      final failureText = _friendlyError(
+        result.errorMessage ?? 'Failed to generate a response.',
+      );
 
       final assistantError = ChatMessage(
         text: failureText,
@@ -172,9 +163,45 @@ class ChatController extends ChangeNotifier {
     return conversationWithReply;
   }
 
-  void _scrollToBottomSoon() {
+  String _friendlyError(String raw) {
+    final message = raw.replaceFirst('Exception: ', '').trim();
+    final lower = message.toLowerCase();
+
+    if (lower.contains('corrupted') ||
+        lower.contains('incomplete') ||
+        lower.contains('invalid')) {
+      return 'The local model file looks incomplete or damaged. Delete the model from Settings and download it again.';
+    }
+
+    if (lower.contains('not initialized') || lower.contains('not ready')) {
+      return 'The local model is not ready yet. Wait for it to finish loading, then try again.';
+    }
+
+    if (lower.contains('native library') ||
+        lower.contains('jni') ||
+        lower.contains('litert')) {
+      return 'Lilly could not start the on-device model on this phone. Try reopening the app. If it still fails, delete the model and download it again.';
+    }
+
+    if (lower.contains('download')) {
+      return 'The model setup is not complete yet. Go back to setup, finish the download, and try again.';
+    }
+
+    return message;
+  }
+
+  void _handleScrollPositionChanged() {
+    if (!scrollController.hasClients) return;
+
+    final remaining =
+        scrollController.position.maxScrollExtent - scrollController.offset;
+    _stickToBottom = remaining < 120;
+  }
+
+  void _scrollToBottomSoon({bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!scrollController.hasClients) return;
+      if (!force && !_stickToBottom) return;
 
       scrollController.animateTo(
         scrollController.position.maxScrollExtent,
@@ -186,7 +213,9 @@ class ChatController extends ChangeNotifier {
 
   @override
   void dispose() {
-    scrollController.dispose();
+    scrollController
+      ..removeListener(_handleScrollPositionChanged)
+      ..dispose();
     super.dispose();
   }
 }

@@ -3,13 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 class MessageInputBar extends StatelessWidget {
-  final TextEditingController controller;
-  final File? selectedImage;
-  final bool isSending;
-  final VoidCallback onPickImage;
-  final VoidCallback onRemoveImage;
-  final VoidCallback onSend;
-
   const MessageInputBar({
     super.key,
     required this.controller,
@@ -19,6 +12,13 @@ class MessageInputBar extends StatelessWidget {
     required this.onRemoveImage,
     required this.onSend,
   });
+
+  final TextEditingController controller;
+  final File? selectedImage;
+  final bool isSending;
+  final VoidCallback onPickImage;
+  final VoidCallback onRemoveImage;
+  final VoidCallback onSend;
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +57,7 @@ class MessageInputBar extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    onPressed: onRemoveImage,
+                    onPressed: isSending ? null : onRemoveImage,
                     icon: const Icon(Icons.close_rounded),
                   ),
                 ],
@@ -75,12 +75,13 @@ class MessageInputBar extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 IconButton(
-                  onPressed: onPickImage,
+                  onPressed: isSending ? null : onPickImage,
                   icon: const Icon(Icons.add_a_photo_rounded),
                 ),
                 Expanded(
                   child: TextField(
                     controller: controller,
+                    enabled: !isSending,
                     minLines: 1,
                     maxLines: 5,
                     textInputAction: TextInputAction.newline,

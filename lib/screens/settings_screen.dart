@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../controllers/model_controller.dart';
 import '../models/model_status.dart';
+import '../models/trigger_capabilities.dart';
 import '../services/model_file_service.dart';
 import '../services/settings_service.dart';
+import '../services/trigger_service.dart';
 import '../widgets/confirm_action_dialog.dart';
 import 'splash_screen.dart';
 
@@ -20,12 +22,16 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final SettingsService _settingsService = SettingsService();
   final ModelFileService _modelFileService = ModelFileService();
+  final TriggerService _triggerService = TriggerService();
 
   bool _saveChatsLocally = true;
   bool _enableImageInput = true;
   bool _showDebugInfo = false;
   bool _loading = true;
+  bool _triggerBusy = false;
+
   ModelFileInfo? _modelInfo;
+  TriggerCapabilities? _triggerCapabilities;
 
   ModelController? get _modelController => widget.modelController;
 
@@ -40,12 +46,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final enableImages = await _settingsService.getEnableImageInput();
     final showDebug = await _settingsService.getShowDebugInfo();
     final modelInfo = await _modelFileService.inspectModelFile(strict: true);
+    final triggerCapabilities = await _triggerService.getCapabilities();
+
+    if (!mounted) return;
 
     setState(() {
       _saveChatsLocally = saveChats;
       _enableImageInput = enableImages;
       _showDebugInfo = showDebug;
       _modelInfo = modelInfo;
+      _triggerCapabilities = triggerCapabilities;
       _loading = false;
     });
   }
@@ -53,10 +63,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _refreshModelDetails() async {
     await _modelController?.refreshStatus();
     final modelInfo = await _modelFileService.inspectModelFile(strict: true);
+    final triggerCapabilities = await _triggerService.getCapabilities();
+
     if (!mounted) return;
 
     setState(() {
       _modelInfo = modelInfo;
+      _triggerCapabilities = triggerCapabilities;
     });
   }
 
@@ -86,6 +99,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Navigator.of(
       context,
     ).pushNamedAndRemoveUntil(SplashScreen.routeName, (route) => false);
+  }
+
+  Future<void> _startTriggerService() async {
+    setState(() => _triggerBusy = true);
+    await _triggerService.startForegroundTrigger();
+    await _refreshModelDetails();
+    if (mounted) {
+      setState(() => _triggerBusy = false);
+    }
+  }
+
+  Future<void> _stopTriggerService() async {
+    setState(() => _triggerBusy = true);
+    await _triggerService.stopForegroundTrigger();
+    await _refreshModelDetails();
+    if (mounted) {
+      setState(() => _triggerBusy = false);
+    }
   }
 
   String _statusLabel(ModelStatus? status) {
@@ -141,6 +172,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final modelStatus = _modelController?.status;
         final modelError = _modelController?.errorMessage;
         final modelInfo = _modelInfo;
+        final trigger = _triggerCapabilities;
 
         return Scaffold(
           appBar: AppBar(
@@ -245,7 +277,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (modelError != null && modelError.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
-                        child: Text(
+                        child: SelectableText(
                           modelError,
                           style: const TextStyle(color: Colors.red),
                         ),
@@ -287,6 +319,80 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
               ),
+              const SizedBox(height: 24),
+              const Text(
+                'Trigger & Background',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _SettingsCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Android trigger scaffold'),
+                      subtitle: Text(
+                        trigger?.platformSupported == true
+                            ? 'Available on this platform'
+                            : 'Not supported on this platform',
+                      ),
+                    ),
+                    if (trigger != null) ...[
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Foreground service'),
+                        subtitle: Text(
+                          trigger.isRunning ? 'Running' : 'Stopped',
+                        ),
+                      ),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Wake word engine'),
+                        subtitle: Text(
+                          trigger.wakeWordReady
+                              ? 'Connected'
+                              : 'Groundwork only, not wired yet',
+                        ),
+                      ),
+                      if (trigger.notes.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: SelectableText(
+                            trigger.notes,
+                            style: TextStyle(
+                              color: Colors.grey.shade700,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          FilledButton.icon(
+                            onPressed: _triggerBusy || trigger.isRunning
+                                ? null
+                                : _startTriggerService,
+                            icon: const Icon(Icons.play_arrow_rounded),
+                            label: const Text('Start service'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _triggerBusy || !trigger.isRunning
+                                ? null
+                                : _stopTriggerService,
+                            icon: const Icon(Icons.stop_rounded),
+                            label: const Text('Stop service'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
         );
@@ -296,11 +402,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 }
 
 class _SettingsCard extends StatelessWidget {
-  final Widget child;
-
   const _SettingsCard({
     required this.child,
   });
+
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
