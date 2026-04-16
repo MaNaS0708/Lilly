@@ -15,6 +15,7 @@ class TriggerService {
         notificationPermissionRecommended: false,
         microphonePermissionRecommended: false,
         isRunning: false,
+        autostartEnabled: false,
         notes: 'Trigger groundwork is currently Android-only.',
       );
     }
@@ -44,5 +45,13 @@ class TriggerService {
       'getTriggerStatus',
     );
     return result?['isRunning'] == true;
+  }
+
+  Future<bool> setTriggerAutostart(bool enabled) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'setTriggerAutostart',
+      {'enabled': enabled},
+    );
+    return result?['success'] == true;
   }
 }

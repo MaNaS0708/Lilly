@@ -1,5 +1,6 @@
 package com.example.lilly
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -45,9 +46,40 @@ class LillyTriggerService : Service() {
         return START_STICKY
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        scheduleRestart()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         isRunning = false
+        val preferences = TriggerPreferences(this)
+        if (preferences.isAutostartEnabled()) {
+            scheduleRestart()
+        }
         super.onDestroy()
+    }
+
+    private fun scheduleRestart() {
+        val restartIntent = Intent(this, TriggerRestartReceiver::class.java).apply {
+            action = "com.example.lilly.action.RESTART_TRIGGER_SERVICE"
+        }
+
+        val pendingIntent = PendingIntent.getBroadcast(
+            this,
+            2,
+            restartIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        val alarmManager = getSystemService(AlarmManager::class.java)
+        val triggerAtMillis = System.currentTimeMillis() + 1500L
+
+        alarmManager?.setAndAllowWhileIdle(
+            AlarmManager.RTC_WAKEUP,
+            triggerAtMillis,
+            pendingIntent,
+        )
     }
 
     private fun buildNotification(): Notification {
@@ -61,8 +93,8 @@ class LillyTriggerService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("Lilly background listening")
-            .setContentText("Trigger groundwork is active. Wake-word engine is not attached yet.")
+            .setContentTitle("Lilly assistant standby")
+            .setContentText("Lightweight trigger service is active. Model stays unloaded until needed.")
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)

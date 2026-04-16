@@ -30,6 +30,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _showDebugInfo = false;
   bool _loading = true;
   bool _triggerBusy = false;
+  bool _triggerEnabled = false;
 
   ModelFileInfo? _modelInfo;
   TriggerCapabilities? _triggerCapabilities;
@@ -46,6 +47,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final saveChats = await _settingsService.getSaveChatsLocally();
     final enableImages = await _settingsService.getEnableImageInput();
     final showDebug = await _settingsService.getShowDebugInfo();
+    final triggerEnabled = await _settingsService.getTriggerEnabled();
     final modelInfo = await _modelFileService.inspectModelFile(strict: true);
     final triggerCapabilities = await _triggerService.getCapabilities();
 
@@ -55,6 +57,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _saveChatsLocally = saveChats;
       _enableImageInput = enableImages;
       _showDebugInfo = showDebug;
+      _triggerEnabled = triggerEnabled;
       _modelInfo = modelInfo;
       _triggerCapabilities = triggerCapabilities;
       _loading = false;
@@ -117,7 +120,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Notification permission is recommended for the foreground service.'),
+          content: Text(
+            'Notification permission is recommended for the foreground service.',
+          ),
         ),
       );
     }
@@ -125,25 +130,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return true;
   }
 
-  Future<void> _startTriggerService() async {
-    final allowed = await _ensureTriggerPermissions();
-    if (!allowed) return;
+  Future<void> _setTriggerEnabled(bool enabled) async {
+    if (_triggerBusy) return;
+
+    if (enabled) {
+      final allowed = await _ensureTriggerPermissions();
+      if (!allowed) return;
+    }
 
     setState(() => _triggerBusy = true);
-    await _triggerService.startForegroundTrigger();
-    await _refreshModelDetails();
-    if (mounted) {
-      setState(() => _triggerBusy = false);
-    }
-  }
 
-  Future<void> _stopTriggerService() async {
-    setState(() => _triggerBusy = true);
-    await _triggerService.stopForegroundTrigger();
-    await _refreshModelDetails();
-    if (mounted) {
-      setState(() => _triggerBusy = false);
+    await _settingsService.setTriggerEnabled(enabled);
+    await _triggerService.setTriggerAutostart(enabled);
+
+    if (enabled) {
+      await _triggerService.startForegroundTrigger();
+    } else {
+      await _triggerService.stopForegroundTrigger();
     }
+
+    await _refreshModelDetails();
+
+    if (!mounted) return;
+    setState(() {
+      _triggerEnabled = enabled;
+      _triggerBusy = false;
+    });
   }
 
   String _statusLabel(ModelStatus? status) {
@@ -319,59 +331,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              _SectionTitle('Trigger & Background'),
+              _SectionTitle('Assistant Trigger'),
               const SizedBox(height: 12),
               _SettingsCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _InfoRow(
-                      title: 'Platform support',
-                      value: trigger?.platformSupported == true
-                          ? 'Available on Android'
-                          : 'Not supported here',
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Keep trigger active'),
+                      subtitle: const Text(
+                        'Runs a lightweight foreground service even when the app is closed.',
+                      ),
+                      value: _triggerEnabled,
+                      onChanged: _triggerBusy ? null : _setTriggerEnabled,
                     ),
+                    const Divider(height: 1),
                     _InfoRow(
                       title: 'Foreground service',
                       value: trigger?.isRunning == true ? 'Running' : 'Stopped',
                     ),
                     _InfoRow(
+                      title: 'Auto-restart',
+                      value: trigger?.autostartEnabled == true
+                          ? 'Enabled'
+                          : 'Disabled',
+                    ),
+                    _InfoRow(
                       title: 'Wake word',
                       value: trigger?.wakeWordReady == true
                           ? 'Connected'
-                          : 'Groundwork only',
+                          : 'Not wired yet',
                     ),
+                    const SizedBox(height: 8),
                     if (trigger != null && trigger.notes.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8, bottom: 12),
-                        child: SelectableText(
-                          trigger.notes,
-                          style: const TextStyle(
-                            color: Color(0xFF4B5563),
-                            height: 1.4,
-                          ),
+                      SelectableText(
+                        trigger.notes,
+                        style: const TextStyle(
+                          color: Color(0xFF4B5563),
+                          height: 1.4,
                         ),
                       ),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: [
-                        FilledButton.icon(
-                          onPressed: _triggerBusy || (trigger?.isRunning ?? false)
-                              ? null
-                              : _startTriggerService,
-                          icon: const Icon(Icons.play_arrow_rounded),
-                          label: const Text('Start service'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: _triggerBusy || !(trigger?.isRunning ?? false)
-                              ? null
-                              : _stopTriggerService,
-                          icon: const Icon(Icons.stop_rounded),
-                          label: const Text('Stop service'),
-                        ),
-                      ],
-                    ),
+                    if (_triggerBusy) ...[
+                      const SizedBox(height: 14),
+                      const LinearProgressIndicator(),
+                    ],
                   ],
                 ),
               ),

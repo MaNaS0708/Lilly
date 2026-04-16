@@ -28,7 +28,7 @@ class MainActivity : FlutterActivity() {
             try {
                 System.loadLibrary("litertlm_jni")
             } catch (_: UnsatisfiedLinkError) {
-                // We surface a readable failure later during model initialization.
+                // surfaced later as readable initialization failure
             }
         }
     }
@@ -91,6 +91,8 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, triggerChannelName)
             .setMethodCallHandler { call, result ->
+                val preferences = TriggerPreferences(this)
+
                 when (call.method) {
                     "getTriggerCapabilities" -> {
                         result.success(
@@ -101,7 +103,8 @@ class MainActivity : FlutterActivity() {
                                 "notificationPermissionRecommended" to (Build.VERSION.SDK_INT >= 33),
                                 "microphonePermissionRecommended" to true,
                                 "isRunning" to LillyTriggerService.isRunning,
-                                "notes" to "Foreground trigger groundwork is active on Android. Wake-word recognition is not wired yet, and power-button activation should remain behind device-specific handling.",
+                                "autostartEnabled" to preferences.isAutostartEnabled(),
+                                "notes" to "This service is intentionally lightweight. It stays alive in the background and auto-restarts, but the Gemma model is not kept in memory all the time. Wake-word detection will be attached here next.",
                             )
                         )
                     }
@@ -114,8 +117,20 @@ class MainActivity : FlutterActivity() {
                         )
                     }
 
+                    "setTriggerAutostart" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        preferences.setAutostartEnabled(enabled)
+                        result.success(
+                            mapOf(
+                                "success" to true,
+                                "enabled" to enabled,
+                            )
+                        )
+                    }
+
                     "startTriggerService" -> {
                         try {
+                            preferences.setAutostartEnabled(true)
                             val intent = Intent(this, LillyTriggerService::class.java)
                             ContextCompat.startForegroundService(this, intent)
                             result.success(
@@ -135,6 +150,7 @@ class MainActivity : FlutterActivity() {
 
                     "stopTriggerService" -> {
                         try {
+                            preferences.setAutostartEnabled(false)
                             val intent = Intent(this, LillyTriggerService::class.java)
                             stopService(intent)
                             result.success(
