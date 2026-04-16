@@ -46,7 +46,6 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _bootstrap() async {
     _enableImageInput = await _settingsService.getEnableImageInput();
     await _conversationListController.load();
-    await _modelController.initialize();
 
     final selected = _conversationListController.selectedConversation;
     if (selected != null) {
@@ -57,6 +56,7 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {});
     }
   }
+
 
   @override
   void dispose() {
@@ -145,7 +145,18 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _sendMessage() async {
-    final text = _textController.text;
+    final text = _textController.text.trim();
+    final hasImage = _chatController.selectedImage != null;
+
+    if (text.isEmpty && !hasImage) return;
+
+    if (!_modelController.isReady) {
+      await _modelController.initialize();
+
+      if (!_modelController.isReady) {
+        return;
+      }
+    }
 
     final updatedConversation = await _chatController.sendMessage(text);
     if (updatedConversation != null) {
@@ -153,6 +164,7 @@ class _ChatScreenState extends State<ChatScreen> {
       await _conversationListController.upsertConversation(updatedConversation);
     }
   }
+
 
   Future<void> _createNewChat() async {
     final conversation = await _conversationListController.createNewConversation();

@@ -18,6 +18,16 @@ import java.io.File
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
+    companion object {
+        init {
+            try {
+                System.loadLibrary("litertlm_jni")
+            } catch (_: UnsatisfiedLinkError) {
+                // We surface a readable failure later during model initialization.
+            }
+        }
+    }
+
     private val channelName = "lilly/model"
     private val mainHandler = Handler(Looper.getMainLooper())
     private val modelExecutor = Executors.newSingleThreadExecutor()
@@ -154,6 +164,7 @@ class MainActivity : FlutterActivity() {
 
         modelExecutor.execute {
             try {
+                ensureNativeLibraryLoaded()
                 closeEngine()
                 Engine.setNativeMinLogSeverity(LogSeverity.ERROR)
 
@@ -193,6 +204,16 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun ensureNativeLibraryLoaded() {
+        try {
+            System.loadLibrary("litertlm_jni")
+        } catch (e: UnsatisfiedLinkError) {
+            throw Exception(
+                "LiteRT-LM native library could not be loaded on this device: ${e.message}"
+            )
+        }
+    }
+
     private fun createEngine(path: String): Pair<Engine, String> {
         val cachePath = applicationContext.cacheDir.absolutePath
         var lastError: Exception? = null
@@ -208,8 +229,8 @@ class MainActivity : FlutterActivity() {
                     EngineConfig(
                         modelPath = path,
                         backend = backend,
-                        visionBackend = Backend.GPU(),
-                        audioBackend = Backend.CPU(),
+                        visionBackend = backend,
+                        audioBackend = backend,
                         maxNumTokens = 2048,
                         cacheDir = cachePath,
                     )
