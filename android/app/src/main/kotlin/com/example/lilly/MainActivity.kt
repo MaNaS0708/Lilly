@@ -19,11 +19,17 @@ import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.SamplerConfig
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import org.json.JSONObject
+import org.vosk.Model
+import org.vosk.Recognizer
+import org.vosk.android.RecognitionListener
+import org.vosk.android.SpeechService
 import java.io.File
 import java.util.concurrent.Executors
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterActivity(), RecognitionListener {
     companion object {
         init {
             try {
@@ -36,6 +42,9 @@ class MainActivity : FlutterActivity() {
 
     private val modelChannelName = "lilly/model"
     private val triggerChannelName = "lilly/trigger"
+    private val voiceChannelName = "lilly/voice"
+    private val voiceEventsChannelName = "lilly/voice_events"
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private val modelExecutor = Executors.newSingleThreadExecutor()
 
@@ -46,6 +55,12 @@ class MainActivity : FlutterActivity() {
     private var modelError: String? = null
     private var activeBackend: String = "uninitialized"
     private var pendingLaunchAction: String? = null
+
+    private var voiceModel: Model? = null
+    private var voiceModelPath: String? = null
+    private var voiceModelLoading = false
+    private var speechService: SpeechService? = null
+    private var voiceEventSink: EventChannel.EventSink? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -117,7 +132,7 @@ class MainActivity : FlutterActivity() {
                                 "microphonePermissionRecommended" to true,
                                 "isRunning" to LillyTriggerService.isRunning,
                                 "autostartEnabled" to preferences.isAutostartEnabled(),
-                                "notes" to "The reliable trigger is now the persistent notification. Use Open Lilly or Start Voice Chat. Vosk will be connected to the voice-chat path next.",
+                                "notes" to "The reliable trigger is the persistent notification. Voice chat uses the downloaded offline Vosk model and Gemma stays on-demand.",
                             )
                         )
                     }
@@ -182,6 +197,32 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, voiceEventsChannelName)
+            .setStreamHandler(
+                object : EventChannel.StreamHandler {
+                    override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                        voiceEventSink = events
+                    }
+
+                    override fun onCancel(arguments: Any?) {
+                        voiceEventSink = null
+                    }
+                }
+            )
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, voiceChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "initializeVoiceModel" -> {
+                        val path = call.argument<String>("modelPath")
+                        initializeVoiceModel(path, result)
+                    }
+                    "startVoiceListening" -> startVoiceListening(result)
+                    "stopVoiceListening" -> stopVoiceListening(result)
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     private fun updatePendingLaunchAction(intent: Intent?) {
@@ -189,6 +230,191 @@ class MainActivity : FlutterActivity() {
             intent?.getBooleanExtra("open_voice_chat", false) == true -> "voice_chat"
             intent?.getBooleanExtra("open_app_only", false) == true -> "open_app"
             else -> pendingLaunchAction
+        }
+    }
+
+    private fun initializeVoiceModel(path: String?, result: MethodChannel.Result) {
+        if (path.isNullOrBlank()) {
+            emitVoiceEvent("error", message = "No Vosk model path was provided.")
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to "No Vosk model path was provided.",
+                )
+            )
+            return
+        }
+
+        val modelDir = File(path)
+        if (!modelDir.exists() || !modelDir.isDirectory) {
+            emitVoiceEvent("error", message = "Vosk model directory not found.")
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to "Vosk model directory not found at: $path",
+                )
+            )
+            return
+        }
+
+        if (!File("$path/am/final.mdl").exists() ||
+            !File("$path/conf/mfcc.conf").exists() ||
+            !File("$path/graph/Gr.fst").exists()
+        ) {
+            emitVoiceEvent("error", message = "Vosk model files are incomplete.")
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to "Vosk model files are incomplete or corrupted.",
+                )
+            )
+            return
+        }
+
+        if (voiceModel != null && voiceModelPath == path) {
+            result.success(mapOf("success" to true))
+            return
+        }
+
+        if (voiceModelLoading) {
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to "Voice model is already loading.",
+                )
+            )
+            return
+        }
+
+        voiceModelLoading = true
+        emitVoiceEvent("initializing", message = "Preparing offline voice model...")
+
+        try {
+            stopSpeechServiceInternal()
+            voiceModel?.close()
+            voiceModel = Model(path)
+            voiceModelPath = path
+            voiceModelLoading = false
+            emitVoiceEvent("ready")
+            result.success(mapOf("success" to true))
+        } catch (e: Exception) {
+            voiceModelLoading = false
+            voiceModel = null
+            voiceModelPath = null
+            emitVoiceEvent(
+                "error",
+                message = e.message ?: "Failed to initialize Vosk model.",
+            )
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to (e.message ?: "Failed to initialize Vosk model."),
+                )
+            )
+        }
+    }
+
+    private fun startVoiceListening(result: MethodChannel.Result) {
+        val model = voiceModel
+        if (model == null) {
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to "Voice model is not initialized.",
+                )
+            )
+            return
+        }
+
+        stopSpeechServiceInternal()
+
+        try {
+            val recognizer = Recognizer(model, 16000.0f)
+            speechService = SpeechService(recognizer, 16000.0f).also {
+                it.startListening(this)
+            }
+            emitVoiceEvent("listening")
+            result.success(mapOf("success" to true))
+        } catch (e: Exception) {
+            emitVoiceEvent(
+                "error",
+                message = e.message ?: "Could not start offline listening.",
+            )
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to (e.message ?: "Could not start offline listening."),
+                )
+            )
+        }
+    }
+
+    private fun stopVoiceListening(result: MethodChannel.Result) {
+        stopSpeechServiceInternal()
+        emitVoiceEvent("stopped")
+        result.success(mapOf("success" to true))
+    }
+
+    private fun stopSpeechServiceInternal() {
+        try {
+            speechService?.stop()
+            speechService?.shutdown()
+        } catch (_: Exception) {
+        } finally {
+            speechService = null
+        }
+    }
+
+    override fun onPartialResult(hypothesis: String?) {
+        val partial = extractJsonField(hypothesis, "partial")
+        emitVoiceEvent("partial", text = partial)
+    }
+
+    override fun onResult(hypothesis: String?) {
+        val text = extractJsonField(hypothesis, "text")
+        if (text.isNotBlank()) {
+            emitVoiceEvent("partial", text = text)
+        }
+    }
+
+    override fun onFinalResult(hypothesis: String?) {
+        val text = extractJsonField(hypothesis, "text")
+        emitVoiceEvent("final", text = text)
+        stopSpeechServiceInternal()
+        emitVoiceEvent("stopped")
+    }
+
+    override fun onError(exception: Exception?) {
+        stopSpeechServiceInternal()
+        emitVoiceEvent(
+            "error",
+            message = exception?.message ?: "Offline voice recognition failed.",
+        )
+    }
+
+    override fun onTimeout() {
+        stopSpeechServiceInternal()
+        emitVoiceEvent("stopped")
+    }
+
+    private fun extractJsonField(json: String?, key: String): String {
+        if (json.isNullOrBlank()) return ""
+        return try {
+            JSONObject(json).optString(key, "")
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    private fun emitVoiceEvent(type: String, text: String? = null, message: String? = null) {
+        mainHandler.post {
+            voiceEventSink?.success(
+                mapOf(
+                    "type" to type,
+                    "text" to text,
+                    "message" to message,
+                )
+            )
         }
     }
 
@@ -225,18 +451,18 @@ class MainActivity : FlutterActivity() {
 
         val file = File(path)
         if (!file.exists()) {
-            modelReady = false
-            modelLoading = false
-            modelPath = null
-            modelError = "Model file not found at: $path"
-            result.success(
-                mapOf(
-                    "success" to false,
-                    "status" to "error",
-                    "errorMessage" to modelError,
-                )
-            )
-            return
+          modelReady = false
+          modelLoading = false
+          modelPath = null
+          modelError = "Model file not found at: $path"
+          result.success(
+              mapOf(
+                  "success" to false,
+                  "status" to "error",
+                  "errorMessage" to modelError,
+              )
+          )
+          return
         }
 
         if (file.length() <= 0L) {
@@ -529,6 +755,9 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        stopSpeechServiceInternal()
+        voiceModel?.close()
+        voiceModel = null
         disposeModel()
         modelExecutor.shutdown()
         super.onDestroy()

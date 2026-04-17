@@ -40,6 +40,7 @@ dependencies:
   path_provider: ^2.1.4
   crypto: ^3.0.5
   flutter_downloader: ^1.11.8
+  archive: ^3.6.1
 
 
   # The following adds the Cupertino Icons font to your application.

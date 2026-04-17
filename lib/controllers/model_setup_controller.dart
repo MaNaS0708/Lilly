@@ -36,33 +36,37 @@ class ModelSetupController extends ChangeNotifier {
   String? _errorMessage;
   String? _accessToken;
   String? _taskId;
+  String _phaseLabel = 'Preparing setup';
 
   ModelDownloadState get state => _state;
   double get progress => _progress;
   String? get errorMessage => _errorMessage;
+  String get phaseLabel => _phaseLabel;
   bool get canCancel =>
       _state == ModelDownloadState.downloading && _taskId != null;
 
   Future<void> initialize() async {
     _state = ModelDownloadState.checking;
     _errorMessage = null;
+    _phaseLabel = 'Checking local models';
     notifyListeners();
 
     try {
-      final fileInfo = await _modelFileService.inspectModelFile(strict: true);
-      if (fileInfo.isValid) {
+      final gemmaInfo = await _modelFileService.inspectModelFile(strict: true);
+      final voskInfo = await _modelFileService.inspectVoskModel();
+
+      if (gemmaInfo.isValid && voskInfo.isValid) {
         _state = ModelDownloadState.ready;
+        _phaseLabel = 'Models ready';
         notifyListeners();
         return;
       }
 
-      if (fileInfo.exists && !fileInfo.isValid) {
+      if (gemmaInfo.exists && !gemmaInfo.isValid) {
         await _modelFileService.deleteModelIfExists();
-        _state = ModelDownloadState.error;
-        _errorMessage =
-            'The local model file is incomplete or corrupted. Please download it again.';
-        notifyListeners();
-        return;
+      }
+      if (voskInfo.exists && !voskInfo.isValid) {
+        await _modelFileService.deleteVoskIfExists();
       }
 
       _taskId = await _storageService.loadTaskId();
@@ -72,20 +76,23 @@ class ModelSetupController extends ChangeNotifier {
       if (_taskId != null) {
         final snapshot = await _modelDownloadManager.findTask(_taskId!);
         if (snapshot != null) {
-          _progress = snapshot.progress / 100.0;
+          _progress = snapshot.progress / 100.0 * 0.9;
 
           switch (snapshot.status) {
             case DownloadTaskStatus.running:
             case DownloadTaskStatus.enqueued:
               _state = ModelDownloadState.downloading;
+              _phaseLabel = 'Downloading Gemma model';
               notifyListeners();
               return;
             case DownloadTaskStatus.complete:
-              final valid = await _modelFileService.hasValidModelFile(
+              final gemmaValid = await _modelFileService.hasValidModelFile(
                 strict: true,
               );
-              if (valid) {
+              final voskValid = await _modelFileService.hasValidVoskModel();
+              if (gemmaValid && voskValid) {
                 _state = ModelDownloadState.ready;
+                _phaseLabel = 'Models ready';
                 await _storageService.markCompleted(true);
                 await _storageService.clearTaskId();
                 _taskId = null;
@@ -96,7 +103,7 @@ class ModelSetupController extends ChangeNotifier {
               await _cleanupBrokenDownloadState();
               _state = ModelDownloadState.error;
               _errorMessage =
-                  'Download finished, but the model file is invalid. Please download it again.';
+                  'Downloaded models are incomplete or corrupted. Please start again.';
               notifyListeners();
               return;
             case DownloadTaskStatus.failed:
@@ -112,10 +119,12 @@ class ModelSetupController extends ChangeNotifier {
       }
 
       _state = ModelDownloadState.needsDownload;
+      _phaseLabel = 'Setup required';
       notifyListeners();
     } catch (e) {
       _state = ModelDownloadState.error;
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      _phaseLabel = 'Setup failed';
       notifyListeners();
     }
   }
@@ -124,9 +133,10 @@ class ModelSetupController extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
-    final valid = await _modelFileService.hasValidModelFile(strict: true);
-    if (valid) {
+    final allValid = await _modelFileService.hasAllRuntimeModels();
+    if (allValid) {
       _state = ModelDownloadState.ready;
+      _phaseLabel = 'Models ready';
       notifyListeners();
       return;
     }
@@ -143,6 +153,7 @@ class ModelSetupController extends ChangeNotifier {
       }
       if (tokenStatus == 401 || tokenStatus == 403) {
         _state = ModelDownloadState.awaitingLicenseAcceptance;
+        _phaseLabel = 'License acceptance needed';
         notifyListeners();
         return;
       }
@@ -159,6 +170,7 @@ class ModelSetupController extends ChangeNotifier {
 
   Future<void> authenticateAndDownload() async {
     _state = ModelDownloadState.authenticating;
+    _phaseLabel = 'Authenticating with Hugging Face';
     _errorMessage = null;
     notifyListeners();
 
@@ -166,6 +178,7 @@ class ModelSetupController extends ChangeNotifier {
 
     if (!auth.success || auth.tokenData == null) {
       _state = ModelDownloadState.error;
+      _phaseLabel = 'Authentication failed';
       _errorMessage = auth.error ?? 'Authentication failed.';
       notifyListeners();
       return;
@@ -181,12 +194,14 @@ class ModelSetupController extends ChangeNotifier {
 
     if (status == 401 || status == 403) {
       _state = ModelDownloadState.awaitingLicenseAcceptance;
+      _phaseLabel = 'License acceptance needed';
       notifyListeners();
       return;
     }
 
     _state = ModelDownloadState.error;
-    _errorMessage = 'Authenticated, but the model is still not accessible.';
+    _phaseLabel = 'Authentication failed';
+    _errorMessage = 'Authenticated, but the Gemma model is still not accessible.';
     notifyListeners();
   }
 
@@ -203,6 +218,7 @@ class ModelSetupController extends ChangeNotifier {
     }
 
     _state = ModelDownloadState.awaitingLicenseAcceptance;
+    _phaseLabel = 'License acceptance needed';
     _errorMessage = 'License not accepted yet, or model access is still blocked.';
     notifyListeners();
   }
@@ -214,6 +230,7 @@ class ModelSetupController extends ChangeNotifier {
     await _cleanupBrokenDownloadState();
 
     _state = ModelDownloadState.needsDownload;
+    _phaseLabel = 'Setup required';
     _errorMessage = null;
     notifyListeners();
   }
@@ -231,6 +248,7 @@ class ModelSetupController extends ChangeNotifier {
     _state = ModelDownloadState.downloading;
     _progress = 0;
     _errorMessage = null;
+    _phaseLabel = 'Downloading Gemma model';
     notifyListeners();
 
     final taskId = await _modelDownloadManager.startDownload(
@@ -239,13 +257,54 @@ class ModelSetupController extends ChangeNotifier {
 
     if (taskId == null) {
       _state = ModelDownloadState.error;
-      _errorMessage = 'Failed to start model download.';
+      _phaseLabel = 'Gemma download failed';
+      _errorMessage = 'Failed to start Gemma model download.';
       notifyListeners();
       return;
     }
 
     _taskId = taskId;
     await _storageService.saveTaskId(taskId);
+  }
+
+  Future<void> _downloadVoskAfterGemma() async {
+    _state = ModelDownloadState.downloading;
+    _phaseLabel = 'Downloading voice model';
+    _errorMessage = null;
+    _progress = 0.9;
+    notifyListeners();
+
+    try {
+      await _modelDownloadService.downloadVoskModel(
+        onProgress: (value) {
+          _progress = 0.9 + (value * 0.1);
+          notifyListeners();
+        },
+      );
+
+      final gemmaValid = await _modelFileService.hasValidModelFile(strict: true);
+      final voskValid = await _modelFileService.hasValidVoskModel();
+
+      if (!gemmaValid || !voskValid) {
+        throw Exception(
+          'One or more models failed validation after download.',
+        );
+      }
+
+      _state = ModelDownloadState.ready;
+      _phaseLabel = 'Models ready';
+      _progress = 1;
+      await _storageService.markCompleted(true);
+      await _storageService.clearTaskId();
+      _taskId = null;
+      notifyListeners();
+    } catch (e) {
+      await _cleanupBrokenDownloadState();
+      _state = ModelDownloadState.error;
+      _phaseLabel = 'Voice model setup failed';
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+    }
   }
 
   Future<void> _cleanupBrokenDownloadState({bool removeTask = true}) async {
@@ -259,6 +318,7 @@ class ModelSetupController extends ChangeNotifier {
 
     await _storageService.reset();
     await _modelFileService.deleteModelIfExists();
+    await _modelFileService.deleteVoskIfExists();
     _taskId = null;
     _progress = 0;
   }
@@ -266,40 +326,43 @@ class ModelSetupController extends ChangeNotifier {
   void _onDownloadEvent(String id, DownloadTaskStatus status, int progress) async {
     if (_taskId != id) return;
 
-    _progress = progress / 100.0;
+    _progress = progress / 100.0 * 0.9;
 
     switch (status) {
       case DownloadTaskStatus.running:
       case DownloadTaskStatus.enqueued:
         _state = ModelDownloadState.downloading;
+        _phaseLabel = 'Downloading Gemma model';
         break;
       case DownloadTaskStatus.complete:
-        final valid = await _modelFileService.hasValidModelFile(strict: true);
-        if (valid) {
-          _state = ModelDownloadState.ready;
-          await _storageService.markCompleted(true);
-          await _storageService.clearTaskId();
-          _taskId = null;
-        } else {
+        final gemmaValid = await _modelFileService.hasValidModelFile(strict: true);
+        if (!gemmaValid) {
           await _cleanupBrokenDownloadState();
           _state = ModelDownloadState.error;
+          _phaseLabel = 'Gemma validation failed';
           _errorMessage =
-              'Download completed, but the model file did not validate. Please try again.';
+              'Gemma download completed, but the model file is invalid.';
+          notifyListeners();
+          return;
         }
-        break;
+        await _downloadVoskAfterGemma();
+        return;
       case DownloadTaskStatus.failed:
         await _cleanupBrokenDownloadState();
         _state = ModelDownloadState.error;
-        _errorMessage = 'Download failed. Please start again.';
+        _phaseLabel = 'Gemma download failed';
+        _errorMessage = 'Gemma download failed. Please start again.';
         break;
       case DownloadTaskStatus.paused:
         await _cleanupBrokenDownloadState();
         _state = ModelDownloadState.error;
-        _errorMessage = 'Download was interrupted. Please start again.';
+        _phaseLabel = 'Gemma download interrupted';
+        _errorMessage = 'Gemma download was interrupted. Please start again.';
         break;
       case DownloadTaskStatus.canceled:
         await _cleanupBrokenDownloadState();
         _state = ModelDownloadState.needsDownload;
+        _phaseLabel = 'Setup required';
         break;
       case DownloadTaskStatus.undefined:
         break;

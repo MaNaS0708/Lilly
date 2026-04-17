@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/model_setup_constants.dart';
@@ -30,36 +31,31 @@ class ModelDownloadService {
     }
   }
 
-  Future<void> downloadModel({
+  Future<void> downloadVoskModel({
     required void Function(double progress) onProgress,
-    String? accessToken,
   }) async {
-    final file = await _modelFileService.getModelFile();
-
-    final headers = <String, String>{};
-    if (accessToken != null && accessToken.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $accessToken';
-    }
+    final archiveFile = await _modelFileService.getVoskArchiveFile();
+    final targetDir = Directory(await _modelFileService.getModelDirectoryPath());
 
     IOSink? sink;
 
     try {
       final request = http.Request(
         'GET',
-        Uri.parse(ModelSetupConstants.modelUrl),
+        Uri.parse(ModelSetupConstants.voskModelUrl),
       );
-      request.headers.addAll(headers);
 
       final response = await request.send();
-
       if (response.statusCode != 200) {
-        throw Exception('Download failed with status ${response.statusCode}');
+        throw Exception(
+          'Vosk download failed with status ${response.statusCode}',
+        );
       }
 
       final total = response.contentLength ?? 0;
       var received = 0;
 
-      sink = file.openWrite();
+      sink = archiveFile.openWrite();
 
       await for (final chunk in response.stream) {
         received += chunk.length;
@@ -73,23 +69,49 @@ class ModelDownloadService {
       await sink.flush();
       await sink.close();
       sink = null;
-    } catch (_) {
+
+      final size = await archiveFile.length();
+      if (size < ModelSetupConstants.minimumValidVoskArchiveBytes) {
+        throw Exception('Downloaded Vosk archive is too small.');
+      }
+
+      final bytes = await archiveFile.readAsBytes();
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      for (final entry in archive) {
+        final outputPath = '${targetDir.path}/${entry.name}';
+
+        if (entry.isFile) {
+          final outputFile = File(outputPath);
+          await outputFile.parent.create(recursive: true);
+          await outputFile.writeAsBytes(entry.content as List<int>);
+        } else {
+          await Directory(outputPath).create(recursive: true);
+        }
+      }
+
+      final valid = await _modelFileService.hasValidVoskModel();
+      if (!valid) {
+        throw Exception('Extracted Vosk model is invalid or incomplete.');
+      }
+
+      try {
+        await archiveFile.delete();
+      } catch (_) {}
+    } catch (e) {
       try {
         await sink?.flush();
       } catch (_) {}
-
       try {
         await sink?.close();
       } catch (_) {}
 
-      try {
-        if (await file.exists()) {
-          await file.delete();
-        }
-      } catch (_) {}
+      await _modelFileService.deleteVoskIfExists();
 
       throw Exception(
-        'Model download interrupted. Please check your internet connection and try again.',
+        e is Exception
+            ? e.toString().replaceFirst('Exception: ', '')
+            : 'Vosk model download failed.',
       );
     }
   }

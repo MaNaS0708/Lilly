@@ -72,13 +72,13 @@ class _SplashScreenState extends State<SplashScreen> {
       case ModelDownloadState.checking:
         return 'Preparing Lilly';
       case ModelDownloadState.needsDownload:
-        return 'Model Download Required';
+        return 'Model Setup Required';
       case ModelDownloadState.authenticating:
         return 'Connecting to Hugging Face';
       case ModelDownloadState.awaitingLicenseAcceptance:
         return 'Accept Model License';
       case ModelDownloadState.downloading:
-        return 'Downloading Model';
+        return _modelSetupController.phaseLabel;
       case ModelDownloadState.ready:
         return 'Ready';
       case ModelDownloadState.error:
@@ -89,17 +89,17 @@ class _SplashScreenState extends State<SplashScreen> {
   String _messageForState(ModelDownloadState state) {
     switch (state) {
       case ModelDownloadState.checking:
-        return 'Checking whether the offline model is already available on this device.';
+        return 'Checking Gemma and offline voice models on this device.';
       case ModelDownloadState.needsDownload:
-        return 'Lilly needs a one-time ${_formatBytes(ModelSetupConstants.expectedModelBytes)} download. After that, chat works offline.';
+        return 'Lilly will download Gemma plus the offline voice model during setup.';
       case ModelDownloadState.authenticating:
-        return 'Sign in to Hugging Face so Lilly can access the model.';
+        return 'Sign in to Hugging Face so Lilly can access the Gemma model.';
       case ModelDownloadState.awaitingLicenseAcceptance:
         return 'Open the model page, accept the license, then come back here and continue.';
       case ModelDownloadState.downloading:
-        return 'The model is downloading now. Keep this screen open until setup completes.';
+        return _modelSetupController.phaseLabel;
       case ModelDownloadState.ready:
-        return 'Model is ready.';
+        return 'All models are ready.';
       case ModelDownloadState.error:
         return _modelSetupController.errorMessage ??
             'Something went wrong during setup.';
@@ -109,7 +109,7 @@ class _SplashScreenState extends State<SplashScreen> {
   String? _primaryLabel() {
     switch (_modelSetupController.state) {
       case ModelDownloadState.needsDownload:
-        return 'Start Download';
+        return 'Start Setup';
       case ModelDownloadState.awaitingLicenseAcceptance:
         return 'Open License Page';
       case ModelDownloadState.error:
@@ -128,18 +128,6 @@ class _SplashScreenState extends State<SplashScreen> {
       return 'Cancel Download';
     }
     return null;
-  }
-
-  String _progressLabel() {
-    final expected = ModelSetupConstants.expectedModelBytes;
-    final current = (expected * _modelSetupController.progress).round();
-    return '${_formatBytes(current)} / ${_formatBytes(expected)}';
-  }
-
-  String _formatBytes(int bytes) {
-    const gb = 1024 * 1024 * 1024;
-    if (bytes <= 0) return '0 GB';
-    return '${(bytes / gb).toStringAsFixed(2)} GB';
   }
 
   @override
@@ -235,14 +223,6 @@ class _SplashScreenState extends State<SplashScreen> {
                         style: TextStyle(
                           color: Colors.grey.shade700,
                           fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _progressLabel(),
-                        style: TextStyle(
-                          color: Colors.grey.shade600,
-                          fontSize: 13,
                         ),
                       ),
                     ],
