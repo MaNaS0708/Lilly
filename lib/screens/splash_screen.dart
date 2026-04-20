@@ -21,7 +21,7 @@ class _SplashScreenState extends State<SplashScreen> {
   ModelSetupController? _modelSetupController;
   bool _loadingBootstrap = true;
   bool _needsLanguageSelection = false;
-  String? _selectedLanguageCode;
+  final Set<String> _selectedLanguageCodes = <String>{};
 
   @override
   void initState() {
@@ -30,11 +30,11 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _bootstrap() async {
-    final storedLanguage = await _settingsService.getVoiceLanguageCode();
+    final storedLanguages = await _settingsService.getVoiceLanguageCodes();
 
     if (!mounted) return;
 
-    if (storedLanguage == null) {
+    if (storedLanguages.isEmpty) {
       setState(() {
         _loadingBootstrap = false;
         _needsLanguageSelection = true;
@@ -109,82 +109,12 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _confirmLanguageSelection() async {
-    if (_selectedLanguageCode == null) return;
+    if (_selectedLanguageCodes.isEmpty) return;
 
-    await _settingsService.setVoiceLanguageCode(_selectedLanguageCode!);
+    await _settingsService.setVoiceLanguageCodes(_selectedLanguageCodes.toList());
 
     if (!mounted) return;
     _startModelSetup();
-  }
-
-  String _titleForState(ModelDownloadState state) {
-    switch (state) {
-      case ModelDownloadState.checking:
-        return 'Preparing Lilly';
-      case ModelDownloadState.needsDownload:
-        return 'Model Setup Required';
-      case ModelDownloadState.authenticating:
-        return 'Connecting to Hugging Face';
-      case ModelDownloadState.awaitingLicenseAcceptance:
-        return 'Accept Model License';
-      case ModelDownloadState.downloading:
-        return _modelSetupController?.phaseLabel ?? 'Downloading';
-      case ModelDownloadState.ready:
-        return 'Ready';
-      case ModelDownloadState.error:
-        return 'Setup Failed';
-    }
-  }
-
-  String _messageForState(ModelDownloadState state) {
-    final controller = _modelSetupController;
-
-    switch (state) {
-      case ModelDownloadState.checking:
-        return 'Checking the multilingual Gemma model and your selected voice model on this device.';
-      case ModelDownloadState.needsDownload:
-        return 'Lilly will download one multilingual Gemma model plus your selected offline voice model.';
-      case ModelDownloadState.authenticating:
-        return 'Sign in to Hugging Face so Lilly can access the Gemma model.';
-      case ModelDownloadState.awaitingLicenseAcceptance:
-        return 'Open the model page, accept the license, then come back here and continue.';
-      case ModelDownloadState.downloading:
-        return controller?.phaseLabel ?? 'Downloading...';
-      case ModelDownloadState.ready:
-        return 'Gemma and your voice model are ready.';
-      case ModelDownloadState.error:
-        return controller?.errorMessage ??
-            'Something went wrong during setup.';
-    }
-  }
-
-  String? _primaryLabel() {
-    final controller = _modelSetupController;
-    if (controller == null) return null;
-
-    switch (controller.state) {
-      case ModelDownloadState.needsDownload:
-        return 'Start Setup';
-      case ModelDownloadState.awaitingLicenseAcceptance:
-        return 'Open License Page';
-      case ModelDownloadState.error:
-        return 'Try Again';
-      default:
-        return null;
-    }
-  }
-
-  String? _secondaryLabel() {
-    final controller = _modelSetupController;
-    if (controller == null) return null;
-
-    if (controller.state == ModelDownloadState.awaitingLicenseAcceptance) {
-      return 'I Accepted The License';
-    }
-    if (controller.canCancel) {
-      return 'Cancel Download';
-    }
-    return null;
   }
 
   Widget _buildLanguageSelection() {
@@ -217,13 +147,6 @@ class _SplashScreenState extends State<SplashScreen> {
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF4F46E5).withValues(alpha: 0.25),
-                            blurRadius: 24,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
                       ),
                       child: const Icon(
                         Icons.translate_rounded,
@@ -233,7 +156,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     ),
                     const SizedBox(height: 28),
                     const Text(
-                      'Choose Voice Language',
+                      'Choose Voice Languages',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 28,
@@ -243,7 +166,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      'Pick the offline speech language Lilly should download first. Only that voice pack will be downloaded.',
+                      'Select one or more offline speech languages. Lilly will download Gemma once and only the voice packs you select.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 15,
@@ -258,28 +181,22 @@ class _SplashScreenState extends State<SplashScreen> {
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(22),
                         border: Border.all(color: const Color(0xFFE5E7EB)),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x0A111827),
-                            blurRadius: 18,
-                            offset: Offset(0, 8),
-                          ),
-                        ],
                       ),
                       child: Column(
                         children: VoiceLanguage.values.map((language) {
-                          final selected = _selectedLanguageCode == language.code;
-                          return RadioListTile<String>(
+                          return CheckboxListTile(
                             contentPadding: EdgeInsets.zero,
                             title: Text(language.label),
-                            value: language.code,
-                            groupValue: _selectedLanguageCode,
-                            onChanged: (value) {
+                            value: _selectedLanguageCodes.contains(language.code),
+                            onChanged: (checked) {
                               setState(() {
-                                _selectedLanguageCode = value;
+                                if (checked == true) {
+                                  _selectedLanguageCodes.add(language.code);
+                                } else {
+                                  _selectedLanguageCodes.remove(language.code);
+                                }
                               });
                             },
-                            selected: selected,
                           );
                         }).toList(),
                       ),
@@ -288,12 +205,9 @@ class _SplashScreenState extends State<SplashScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton(
-                        onPressed: _selectedLanguageCode == null
+                        onPressed: _selectedLanguageCodes.isEmpty
                             ? null
                             : _confirmLanguageSelection,
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
                         child: const Text('Continue'),
                       ),
                     ),
@@ -308,16 +222,50 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Widget _buildSetupScreen() {
-    final controller = _modelSetupController;
-    if (controller == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+    final controller = _modelSetupController!;
+    final state = controller.state;
+
+    String? primaryLabel() {
+      switch (state) {
+        case ModelDownloadState.needsDownload:
+          return 'Start Setup';
+        case ModelDownloadState.awaitingLicenseAcceptance:
+          return 'Open License Page';
+        case ModelDownloadState.error:
+          return 'Try Again';
+        default:
+          return null;
+      }
     }
 
-    final state = controller.state;
-    final primaryLabel = _primaryLabel();
-    final secondaryLabel = _secondaryLabel();
+    String? secondaryLabel() {
+      if (state == ModelDownloadState.awaitingLicenseAcceptance) {
+        return 'I Accepted The License';
+      }
+      if (controller.canCancel) {
+        return 'Cancel Download';
+      }
+      return null;
+    }
+
+    String messageForState() {
+      switch (state) {
+        case ModelDownloadState.checking:
+          return 'Checking Gemma and selected voice packs on this device.';
+        case ModelDownloadState.needsDownload:
+          return 'Selected languages: ${controller.requiredVoiceLanguageSummary}';
+        case ModelDownloadState.authenticating:
+          return 'Sign in to Hugging Face so Lilly can access the Gemma model.';
+        case ModelDownloadState.awaitingLicenseAcceptance:
+          return 'Open the model page, accept the license, then come back here.';
+        case ModelDownloadState.downloading:
+          return '${controller.phaseLabel}\nCurrent file: ${controller.activeModelLabel}';
+        case ModelDownloadState.ready:
+          return 'Gemma and selected voice packs are ready.';
+        case ModelDownloadState.error:
+          return controller.errorMessage ?? 'Something went wrong during setup.';
+      }
+    }
 
     return Scaffold(
       body: Container(
@@ -334,99 +282,49 @@ class _SplashScreenState extends State<SplashScreen> {
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
+                constraints: const BoxConstraints(maxWidth: 440),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Container(
-                      width: 96,
-                      height: 96,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF1E3A8A), Color(0xFF4F46E5)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF4F46E5).withValues(alpha: 0.25),
-                            blurRadius: 24,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: state == ModelDownloadState.checking ||
-                              state == ModelDownloadState.authenticating ||
-                              state == ModelDownloadState.downloading
-                          ? const Padding(
-                              padding: EdgeInsets.all(26),
-                              child: CircularProgressIndicator(
-                                strokeWidth: 3,
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          : const Icon(
-                              Icons.visibility_rounded,
-                              color: Colors.white,
-                              size: 44,
-                            ),
-                    ),
-                    const SizedBox(height: 28),
+                    const Icon(Icons.visibility_rounded, size: 56),
+                    const SizedBox(height: 24),
                     Text(
-                      _titleForState(state),
+                      controller.phaseLabel,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF111827),
                       ),
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      _messageForState(state),
+                      messageForState(),
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 15,
-                        height: 1.5,
-                        color: Colors.grey.shade700,
-                      ),
+                      style: const TextStyle(height: 1.5),
                     ),
                     if (state == ModelDownloadState.downloading) ...[
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 24),
                       LinearProgressIndicator(
-                        value: controller.progress == 0
-                            ? null
-                            : controller.progress,
+                        value: controller.progress == 0 ? null : controller.progress,
                       ),
                       const SizedBox(height: 10),
-                      Text(
-                        '${(controller.progress * 100).toStringAsFixed(0)}%',
-                        style: TextStyle(
-                          color: Colors.grey.shade700,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      Text('${(controller.progress * 100).toStringAsFixed(0)}%'),
                     ],
-                    const SizedBox(height: 28),
-                    if (primaryLabel != null)
+                    const SizedBox(height: 24),
+                    if (primaryLabel() != null)
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton(
                           onPressed: _handlePrimaryAction,
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                          ),
-                          child: Text(primaryLabel),
+                          child: Text(primaryLabel()!),
                         ),
                       ),
-                    if (secondaryLabel != null)
+                    if (secondaryLabel() != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 12),
                         child: OutlinedButton(
                           onPressed: _handleSecondaryAction,
-                          child: Text(secondaryLabel),
+                          child: Text(secondaryLabel()!),
                         ),
                       ),
                   ],

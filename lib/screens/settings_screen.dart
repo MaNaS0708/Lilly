@@ -32,7 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loading = true;
   bool _triggerBusy = false;
   bool _triggerEnabled = false;
-  String? _voiceLanguageCode;
+  final Set<String> _voiceLanguageCodes = <String>{};
 
   ModelFileInfo? _modelInfo;
   TriggerCapabilities? _triggerCapabilities;
@@ -50,7 +50,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final enableImages = await _settingsService.getEnableImageInput();
     final showDebug = await _settingsService.getShowDebugInfo();
     final triggerEnabled = await _settingsService.getTriggerEnabled();
-    final voiceLanguageCode = await _settingsService.getVoiceLanguageCode();
+    final voiceLanguageCodes = await _settingsService.getVoiceLanguageCodes();
     final modelInfo = await _modelFileService.inspectModelFile(strict: true);
     final triggerCapabilities = await _triggerService.getCapabilities();
 
@@ -61,7 +61,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _enableImageInput = enableImages;
       _showDebugInfo = showDebug;
       _triggerEnabled = triggerEnabled;
-      _voiceLanguageCode = voiceLanguageCode;
+      _voiceLanguageCodes
+        ..clear()
+        ..addAll(voiceLanguageCodes);
       _modelInfo = modelInfo;
       _triggerCapabilities = triggerCapabilities;
       _loading = false;
@@ -109,16 +111,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ).pushNamedAndRemoveUntil(SplashScreen.routeName, (route) => false);
   }
 
-  Future<void> _changeVoiceLanguage(String? value) async {
-    if (value == null || value == _voiceLanguageCode) return;
+  Future<void> _toggleVoiceLanguage(String code, bool enabled) async {
+    final next = Set<String>.from(_voiceLanguageCodes);
 
-    await _settingsService.setVoiceLanguageCode(value);
+    if (enabled) {
+      next.add(code);
+    } else {
+      next.remove(code);
+    }
+
+    if (next.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select at least one voice language.'),
+        ),
+      );
+      return;
+    }
+
+    await _settingsService.setVoiceLanguageCodes(next.toList());
     await _modelController?.shutdown();
 
     if (!mounted) return;
 
     setState(() {
-      _voiceLanguageCode = value;
+      _voiceLanguageCodes
+        ..clear()
+        ..addAll(next);
     });
 
     Navigator.of(
@@ -233,9 +253,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final modelError = _modelController?.errorMessage;
         final modelInfo = _modelInfo;
         final trigger = _triggerCapabilities;
-        final selectedVoiceLanguage = _voiceLanguageCode == null
-            ? null
-            : VoiceLanguage.fromCode(_voiceLanguageCode);
+        final selectedLabels = VoiceLanguage.values
+            .where((language) => _voiceLanguageCodes.contains(language.code))
+            .map((language) => language.label)
+            .join(', ');
 
         return Scaffold(
           appBar: AppBar(
@@ -285,14 +306,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              _SectionTitle('Voice Language'),
+              _SectionTitle('Voice Languages'),
               const SizedBox(height: 12),
               _SettingsCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Speech recognition language',
+                      'Speech recognition languages',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF111827),
@@ -300,32 +321,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Only the selected offline voice pack will be kept on the device. Changing this will reopen setup and download the new pack.',
+                      'Select one or more offline voice packs. Lilly will reopen setup and download only the selected packs.',
                       style: TextStyle(
                         color: Color(0xFF4B5563),
                         height: 1.4,
                       ),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: _voiceLanguageCode,
-                      decoration: const InputDecoration(
-                        labelText: 'Voice language',
+                    ...VoiceLanguage.values.map(
+                      (language) => CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(language.label),
+                        value: _voiceLanguageCodes.contains(language.code),
+                        onChanged: (checked) =>
+                            _toggleVoiceLanguage(language.code, checked ?? false),
                       ),
-                      items: VoiceLanguage.values
-                          .map(
-                            (language) => DropdownMenuItem<String>(
-                              value: language.code,
-                              child: Text(language.label),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: _changeVoiceLanguage,
                     ),
-                    if (selectedVoiceLanguage != null) ...[
-                      const SizedBox(height: 10),
+                    if (selectedLabels.isNotEmpty) ...[
+                      const SizedBox(height: 8),
                       Text(
-                        'Current voice pack: ${selectedVoiceLanguage.label}',
+                        'Current voice packs: $selectedLabels',
                         style: const TextStyle(
                           color: Color(0xFF4B5563),
                           height: 1.4,

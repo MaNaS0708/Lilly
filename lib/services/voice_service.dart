@@ -45,12 +45,10 @@ class VoiceService {
   }
 
   Future<bool> initializeVoiceModel() async {
-    final selectedCode = await _settingsService.getVoiceLanguageCode();
-    if (selectedCode == null) {
-      return false;
-    }
+    final selectedCodes = await _settingsService.getVoiceLanguageCodes();
+    if (selectedCodes.isEmpty) return false;
 
-    final modelPath = await _modelFileService.getVoskModelPath(selectedCode);
+    final modelPath = await _modelFileService.getVoskModelPath(selectedCodes.first);
 
     final result = await _methodChannel.invokeMethod<Map<dynamic, dynamic>>(
       'initializeVoiceModel',

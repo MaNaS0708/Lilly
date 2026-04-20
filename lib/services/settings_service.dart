@@ -7,7 +7,7 @@ class SettingsService {
   static const enableImagesKey = 'settings_enable_images';
   static const showDebugKey = 'settings_show_debug';
   static const triggerEnabledKey = 'settings_trigger_enabled';
-  static const voiceLanguageKey = 'settings_voice_language';
+  static const voiceLanguagesKey = 'settings_voice_languages';
 
   Future<bool> getSaveChatsLocally() async {
     final prefs = await SharedPreferences.getInstance();
@@ -29,18 +29,13 @@ class SettingsService {
     return prefs.getBool(triggerEnabledKey) ?? false;
   }
 
-  Future<String?> getVoiceLanguageCode() async {
+  Future<List<String>> getVoiceLanguageCodes() async {
     final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getString(voiceLanguageKey);
-    if (stored == null) return null;
-
-    for (final language in VoiceLanguage.values) {
-      if (language.code == stored) {
-        return stored;
-      }
-    }
-
-    return null;
+    final stored = prefs.getStringList(voiceLanguagesKey) ?? const [];
+    final valid = stored
+        .where((code) => VoiceLanguage.values.any((item) => item.code == code))
+        .toList();
+    return valid;
   }
 
   Future<void> setSaveChatsLocally(bool value) async {
@@ -63,13 +58,17 @@ class SettingsService {
     await prefs.setBool(triggerEnabledKey, value);
   }
 
-  Future<void> setVoiceLanguageCode(String value) async {
+  Future<void> setVoiceLanguageCodes(List<String> values) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(voiceLanguageKey, VoiceLanguage.fromCode(value).code);
+    final valid = values
+        .where((code) => VoiceLanguage.values.any((item) => item.code == code))
+        .toSet()
+        .toList();
+    await prefs.setStringList(voiceLanguagesKey, valid);
   }
 
-  Future<void> clearVoiceLanguageCode() async {
+  Future<void> clearVoiceLanguageCodes() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(voiceLanguageKey);
+    await prefs.remove(voiceLanguagesKey);
   }
 }

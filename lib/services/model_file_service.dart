@@ -34,11 +34,6 @@ class ModelFileService {
     return File(await getModelPath());
   }
 
-  Future<bool> modelExists() async {
-    final file = await getModelFile();
-    return file.exists();
-  }
-
   Future<bool> hasValidModelFile({bool strict = false}) async {
     final file = await getModelFile();
     if (!await file.exists()) return false;
@@ -47,7 +42,6 @@ class ModelFileService {
     if (strict) {
       return size == ModelSetupConstants.expectedModelBytes;
     }
-
     return size >= ModelSetupConstants.minimumValidModelBytes;
   }
 
@@ -106,36 +100,10 @@ class ModelFileService {
     ];
 
     for (final path in requiredPaths) {
-      if (!await File(path).exists()) {
-        return false;
-      }
+      if (!await File(path).exists()) return false;
     }
 
     return true;
-  }
-
-  Future<ModelFileInfo> inspectVoskModel(String languageCode) async {
-    final path = await getVoskModelPath(languageCode);
-    final dir = Directory(path);
-    final exists = await dir.exists();
-
-    var sizeBytes = 0;
-    if (exists) {
-      await for (final entity in dir.list(recursive: true, followLinks: false)) {
-        if (entity is File) {
-          sizeBytes += await entity.length();
-        }
-      }
-    }
-
-    final isValid = exists && await hasValidVoskModel(languageCode);
-
-    return ModelFileInfo(
-      exists: exists,
-      sizeBytes: sizeBytes,
-      isValid: isValid,
-      path: path,
-    );
   }
 
   Future<void> deleteModelIfExists() async {
@@ -159,7 +127,6 @@ class ModelFileService {
 
   Future<void> deleteUnusedVoiceModels(Iterable<String> keepCodes) async {
     final keep = keepCodes.toSet();
-
     for (final language in VoiceLanguage.values) {
       if (!keep.contains(language.code)) {
         await deleteVoskIfExists(language.code);

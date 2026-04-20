@@ -17,10 +17,7 @@ class LillyTriggerService : Service() {
         private const val CHANNEL_ID = "lilly_trigger_channel"
         private const val CHANNEL_NAME = "Lilly Trigger Service"
         private const val NOTIFICATION_ID = 4107
-
         private const val RESTART_ACTION = "com.example.lilly.action.RESTART_TRIGGER_SERVICE"
-        private const val OPEN_APP_ACTION = "com.example.lilly.action.OPEN_APP"
-        private const val START_VOICE_CHAT_ACTION = "com.example.lilly.action.START_VOICE_CHAT"
 
         @Volatile
         var isRunning: Boolean = false
@@ -34,18 +31,6 @@ class LillyTriggerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            OPEN_APP_ACTION -> {
-                openApp(openVoiceChat = false)
-                return START_STICKY
-            }
-
-            START_VOICE_CHAT_ACTION -> {
-                openApp(openVoiceChat = true)
-                return START_STICKY
-            }
-        }
-
         isRunning = true
         val notification = buildNotification()
 
@@ -71,22 +56,9 @@ class LillyTriggerService : Service() {
         isRunning = false
         val preferences = TriggerPreferences(this)
         if (preferences.isAutostartEnabled()) {
-            scheduleRestart()
+          scheduleRestart()
         }
         super.onDestroy()
-    }
-
-    private fun openApp(openVoiceChat: Boolean) {
-        val launchIntent = Intent(this, MainActivity::class.java).apply {
-            addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP,
-            )
-            putExtra("open_voice_chat", openVoiceChat)
-            putExtra("open_app_only", !openVoiceChat)
-        }
-        startActivity(launchIntent)
     }
 
     private fun scheduleRestart() {
@@ -112,39 +84,33 @@ class LillyTriggerService : Service() {
     }
 
     private fun buildNotification(): Notification {
-        val openAppIntent = Intent(this, LillyTriggerService::class.java).apply {
-            action = OPEN_APP_ACTION
+        val openAppIntent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra("open_app_only", true)
         }
-        val openAppPendingIntent = PendingIntent.getService(
+        val openAppPendingIntent = PendingIntent.getActivity(
             this,
             10,
             openAppIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val voiceChatIntent = Intent(this, LillyTriggerService::class.java).apply {
-            action = START_VOICE_CHAT_ACTION
+        val voiceChatIntent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra("open_voice_chat", true)
         }
-        val voiceChatPendingIntent = PendingIntent.getService(
+        val voiceChatPendingIntent = PendingIntent.getActivity(
             this,
             11,
             voiceChatIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val activityIntent = Intent(this, MainActivity::class.java)
-        val activityPendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            activityIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Lilly assistant standby")
-            .setContentText("Notification trigger is active. Model stays unloaded until needed.")
-            .setContentIntent(activityPendingIntent)
+            .setContentText("Notification trigger is active.")
+            .setContentIntent(openAppPendingIntent)
             .addAction(0, "Open Lilly", openAppPendingIntent)
             .addAction(0, "Start Voice Chat", voiceChatPendingIntent)
             .setOngoing(true)

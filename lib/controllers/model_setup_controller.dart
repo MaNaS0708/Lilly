@@ -43,25 +43,26 @@ class ModelSetupController extends ChangeNotifier {
   String? _taskId;
   String _phaseLabel = 'Preparing setup';
   List<VoiceLanguage> _requiredVoiceLanguages = const [];
+  String _activeModelLabel = 'None';
 
   ModelDownloadState get state => _state;
   double get progress => _progress;
   String? get errorMessage => _errorMessage;
   String get phaseLabel => _phaseLabel;
+  String get activeModelLabel => _activeModelLabel;
   bool get canCancel =>
       _state == ModelDownloadState.downloading && _taskId != null;
 
   String get requiredVoiceLanguageSummary {
-    if (_requiredVoiceLanguages.isEmpty) {
-      return 'voice language';
-    }
-    return _requiredVoiceLanguages.map((language) => language.label).join(', ');
+    if (_requiredVoiceLanguages.isEmpty) return 'None';
+    return _requiredVoiceLanguages.map((item) => item.label).join(', ');
   }
 
   Future<void> initialize() async {
     _state = ModelDownloadState.checking;
     _errorMessage = null;
     _phaseLabel = 'Checking local models';
+    _activeModelLabel = 'Checking Gemma and voice packs';
     notifyListeners();
 
     try {
@@ -70,6 +71,7 @@ class ModelSetupController extends ChangeNotifier {
       if (_requiredVoiceLanguages.isEmpty) {
         _state = ModelDownloadState.needsDownload;
         _phaseLabel = 'Language selection required';
+        _activeModelLabel = 'No voice language selected';
         notifyListeners();
         return;
       }
@@ -79,9 +81,9 @@ class ModelSetupController extends ChangeNotifier {
       );
 
       final gemmaInfo = await _modelFileService.inspectModelFile(strict: true);
-      final voiceModelsReady = await _areRequiredVoiceModelsReady();
+      final voicesReady = await _areRequiredVoiceModelsReady();
 
-      if (gemmaInfo.isValid && voiceModelsReady) {
+      if (gemmaInfo.isValid && voicesReady) {
         _completeSetup();
         notifyListeners();
         return;
@@ -96,52 +98,9 @@ class ModelSetupController extends ChangeNotifier {
       final storedToken = await _hfAuthService.getStoredToken();
       _accessToken = storedToken?.accessToken;
 
-      if (_taskId != null) {
-        final snapshot = await _modelDownloadManager.findTask(_taskId!);
-        if (snapshot != null) {
-          _progress = snapshot.progress / 100.0 * 0.75;
-
-          switch (snapshot.status) {
-            case DownloadTaskStatus.running:
-            case DownloadTaskStatus.enqueued:
-              _state = ModelDownloadState.downloading;
-              _phaseLabel = 'Downloading Gemma model';
-              notifyListeners();
-              return;
-            case DownloadTaskStatus.complete:
-              final gemmaValid = await _modelFileService.hasValidModelFile(
-                strict: true,
-              );
-              await _storageService.clearTaskId();
-              _taskId = null;
-
-              if (gemmaValid) {
-                _state = ModelDownloadState.needsDownload;
-                _phaseLabel = 'Voice model download required';
-                notifyListeners();
-                return;
-              }
-
-              await _cleanupGemmaDownloadState(removeTask: false);
-              _state = ModelDownloadState.error;
-              _errorMessage =
-                  'Gemma download completed, but the model file is invalid. Please start again.';
-              notifyListeners();
-              return;
-            case DownloadTaskStatus.failed:
-            case DownloadTaskStatus.paused:
-            case DownloadTaskStatus.canceled:
-            case DownloadTaskStatus.undefined:
-              await _cleanupGemmaDownloadState();
-              break;
-          }
-        } else {
-          await _cleanupGemmaDownloadState(removeTask: false);
-        }
-      }
-
       _state = ModelDownloadState.needsDownload;
       _phaseLabel = 'Setup required';
+      _activeModelLabel = 'Gemma + ${requiredVoiceLanguageSummary} voice packs';
       notifyListeners();
     } catch (e) {
       _state = ModelDownloadState.error;
@@ -158,7 +117,7 @@ class ModelSetupController extends ChangeNotifier {
     if (_requiredVoiceLanguages.isEmpty) {
       _state = ModelDownloadState.error;
       _phaseLabel = 'Language selection required';
-      _errorMessage = 'Choose a voice language before starting setup.';
+      _errorMessage = 'Choose at least one voice language before setup.';
       notifyListeners();
       return;
     }
@@ -196,6 +155,7 @@ class ModelSetupController extends ChangeNotifier {
       if (tokenStatus == 401 || tokenStatus == 403) {
         _state = ModelDownloadState.awaitingLicenseAcceptance;
         _phaseLabel = 'License acceptance needed';
+        _activeModelLabel = 'Gemma multilingual model';
         notifyListeners();
         return;
       }
@@ -213,6 +173,7 @@ class ModelSetupController extends ChangeNotifier {
   Future<void> authenticateAndDownload() async {
     _state = ModelDownloadState.authenticating;
     _phaseLabel = 'Authenticating with Hugging Face';
+    _activeModelLabel = 'Gemma multilingual model';
     _errorMessage = null;
     notifyListeners();
 
@@ -237,6 +198,7 @@ class ModelSetupController extends ChangeNotifier {
     if (status == 401 || status == 403) {
       _state = ModelDownloadState.awaitingLicenseAcceptance;
       _phaseLabel = 'License acceptance needed';
+      _activeModelLabel = 'Gemma multilingual model';
       notifyListeners();
       return;
     }
@@ -261,6 +223,7 @@ class ModelSetupController extends ChangeNotifier {
 
     _state = ModelDownloadState.awaitingLicenseAcceptance;
     _phaseLabel = 'License acceptance needed';
+    _activeModelLabel = 'Gemma multilingual model';
     _errorMessage = 'License not accepted yet, or model access is still blocked.';
     notifyListeners();
   }
@@ -273,6 +236,7 @@ class ModelSetupController extends ChangeNotifier {
 
     _state = ModelDownloadState.needsDownload;
     _phaseLabel = 'Setup required';
+    _activeModelLabel = 'Gemma + ${requiredVoiceLanguageSummary} voice packs';
     _errorMessage = null;
     notifyListeners();
   }
@@ -291,6 +255,7 @@ class ModelSetupController extends ChangeNotifier {
     _progress = 0;
     _errorMessage = null;
     _phaseLabel = 'Downloading Gemma model';
+    _activeModelLabel = 'Gemma multilingual model';
     notifyListeners();
 
     final taskId = await _modelDownloadManager.startDownload(
@@ -319,8 +284,8 @@ class ModelSetupController extends ChangeNotifier {
       return;
     }
 
-    final progressStart = gemmaAlreadyReady ? 0.0 : 0.75;
-    final progressSpan = gemmaAlreadyReady ? 1.0 : 0.25;
+    final progressStart = gemmaAlreadyReady ? 0.0 : 0.8;
+    final progressSpan = gemmaAlreadyReady ? 1.0 : 0.2;
 
     _state = ModelDownloadState.downloading;
     _errorMessage = null;
@@ -331,6 +296,7 @@ class ModelSetupController extends ChangeNotifier {
       for (var index = 0; index < missing.length; index++) {
         final language = missing[index];
         _phaseLabel = 'Downloading ${language.label} voice model';
+        _activeModelLabel = language.voskArchiveFileName;
         notifyListeners();
 
         await _modelDownloadService.downloadVoskModel(
@@ -362,9 +328,8 @@ class ModelSetupController extends ChangeNotifier {
   }
 
   Future<List<VoiceLanguage>> _loadRequiredVoiceLanguages() async {
-    final selectedCode = await _settingsService.getVoiceLanguageCode();
-    if (selectedCode == null) return const [];
-    return [VoiceLanguage.fromCode(selectedCode)];
+    final selectedCodes = await _settingsService.getVoiceLanguageCodes();
+    return selectedCodes.map(VoiceLanguage.fromCode).toList();
   }
 
   Future<bool> _areRequiredVoiceModelsReady() async {
@@ -380,9 +345,7 @@ class ModelSetupController extends ChangeNotifier {
     final missing = <VoiceLanguage>[];
     for (final language in _requiredVoiceLanguages) {
       final valid = await _modelFileService.hasValidVoskModel(language.code);
-      if (!valid) {
-        missing.add(language);
-      }
+      if (!valid) missing.add(language);
     }
     return missing;
   }
@@ -415,6 +378,7 @@ class ModelSetupController extends ChangeNotifier {
   void _completeSetup() {
     _state = ModelDownloadState.ready;
     _phaseLabel = 'Models ready';
+    _activeModelLabel = 'Gemma + ${requiredVoiceLanguageSummary} ready';
     _progress = 1;
     _taskId = null;
     _storageService.markCompleted(true);
@@ -424,13 +388,14 @@ class ModelSetupController extends ChangeNotifier {
   void _onDownloadEvent(String id, DownloadTaskStatus status, int progress) async {
     if (_taskId != id) return;
 
-    _progress = progress / 100.0 * 0.75;
+    _progress = progress / 100.0 * 0.8;
 
     switch (status) {
       case DownloadTaskStatus.running:
       case DownloadTaskStatus.enqueued:
         _state = ModelDownloadState.downloading;
         _phaseLabel = 'Downloading Gemma model';
+        _activeModelLabel = ModelSetupConstants.modelFileName;
         break;
       case DownloadTaskStatus.complete:
         final gemmaValid = await _modelFileService.hasValidModelFile(strict: true);

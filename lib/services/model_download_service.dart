@@ -71,7 +71,7 @@ class ModelDownloadService {
 
       final size = await archiveFile.length();
       if (size < language.minimumArchiveBytes) {
-        throw Exception('Downloaded ${language.label} voice archive is too small.');
+        throw Exception('Downloaded ${language.label} archive is too small.');
       }
 
       final bytes = await archiveFile.readAsBytes();
@@ -110,9 +110,7 @@ class ModelDownloadService {
       await _modelFileService.deleteVoskIfExists(language.code);
 
       throw Exception(
-        e is Exception
-            ? e.toString().replaceFirst('Exception: ', '')
-            : '${language.label} voice model download failed.',
+        e.toString().replaceFirst('Exception: ', ''),
       );
     }
   }
