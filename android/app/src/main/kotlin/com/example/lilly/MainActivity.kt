@@ -233,50 +233,94 @@ class MainActivity : FlutterActivity(), RecognitionListener {
         }
     }
 
-    private fun initializeVoiceModel(result: MethodChannel.Result) {
-        if (voiceModel != null) {
-            result.success(mapOf("success" to true))
-            return
-        }
-
-        if (voiceModelLoading) {
-            result.success(
-                mapOf(
-                    "success" to false,
-                    "errorMessage" to "Voice model is already loading.",
-                )
+    private fun initializeVoiceModel(path: String?, result: MethodChannel.Result) {
+    if (path.isNullOrBlank()) {
+        emitVoiceEvent("error", message = "No Vosk model path was provided.")
+        result.success(
+            mapOf(
+                "success" to false,
+                "errorMessage" to "No Vosk model path was provided.",
             )
-            return
-        }
+        )
+        return
+    }
 
-        voiceModelLoading = true
-        emitVoiceEvent("initializing", message = "Preparing offline voice model...")
+    val modelDir = File(path)
+    if (!modelDir.exists() || !modelDir.isDirectory) {
+        emitVoiceEvent("error", message = "Vosk model directory not found.")
+        result.success(
+            mapOf(
+                "success" to false,
+                "errorMessage" to "Vosk model directory not found at: $path",
+            )
+        )
+        return
+    }
 
-        StorageService.unpack(
-            this,
-            VOSK_ASSET_PATH,
-            VOSK_STORAGE_NAME,
-            { model ->
-                voiceModelLoading = false
-                voiceModel = model
-                emitVoiceEvent("ready")
-                result.success(mapOf("success" to true))
-            },
-            { exception ->
-                voiceModelLoading = false
-                emitVoiceEvent(
-                    "error",
-                    message = exception.message ?: "Failed to unpack Vosk model.",
-                )
-                result.success(
-                    mapOf(
-                        "success" to false,
-                        "errorMessage" to (exception.message ?: "Failed to unpack Vosk model."),
-                    )
-                )
-            },
+    val nestedValid =
+        File("$path/am/final.mdl").exists() &&
+        File("$path/conf/mfcc.conf").exists() &&
+        File("$path/graph/Gr.fst").exists()
+
+    val flatValid =
+        File("$path/final.mdl").exists() &&
+        File("$path/mfcc.conf").exists() &&
+        File("$path/Gr.fst").exists()
+
+    if (!nestedValid && !flatValid) {
+        emitVoiceEvent("error", message = "Vosk model files are incomplete.")
+        result.success(
+            mapOf(
+                "success" to false,
+                "errorMessage" to "Vosk model files are incomplete or corrupted.",
+            )
+        )
+        return
+    }
+
+    if (voiceModel != null && voiceModelPath == path) {
+        result.success(mapOf("success" to true))
+        return
+    }
+
+    if (voiceModelLoading) {
+        result.success(
+            mapOf(
+                "success" to false,
+                "errorMessage" to "Voice model is already loading.",
+            )
+        )
+        return
+    }
+
+    voiceModelLoading = true
+    emitVoiceEvent("initializing", message = "Preparing offline voice model...")
+
+    try {
+        stopSpeechServiceInternal()
+        voiceModel?.close()
+        voiceModel = Model(path)
+        voiceModelPath = path
+        voiceModelLoading = false
+        emitVoiceEvent("ready")
+        result.success(mapOf("success" to true))
+    } catch (e: Exception) {
+        voiceModelLoading = false
+        voiceModel = null
+        voiceModelPath = null
+        emitVoiceEvent(
+            "error",
+            message = e.message ?: "Failed to initialize Vosk model.",
+        )
+        result.success(
+            mapOf(
+                "success" to false,
+                "errorMessage" to (e.message ?: "Failed to initialize Vosk model."),
+            )
         )
     }
+}
+
 
     private fun startVoiceListening(result: MethodChannel.Result) {
         val model = voiceModel

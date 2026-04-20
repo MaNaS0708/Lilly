@@ -84,12 +84,6 @@ class _ChatScreenState extends State<ChatScreen> {
             _isVoicePreparing = false;
             _isVoiceListening = true;
           });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Listening offline...'),
-              duration: Duration(milliseconds: 1000),
-            ),
-          );
           break;
         case 'partial':
           final partial = (event.text ?? '').trim();
@@ -170,7 +164,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _isVoicePreparing = false;
       });
       _chatController.showError(
-        'Vosk model is not ready. Make sure the Android asset model is installed correctly.',
+        'Voice model is not ready yet. Finish setup first.',
       );
       return;
     }
@@ -305,8 +299,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _createNewChat() async {
-    final conversation =
-        await _conversationListController.createNewConversation();
+    final conversation = await _conversationListController.createNewConversation();
     _chatController.attachConversation(conversation);
 
     if (!mounted) return;
@@ -426,7 +419,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 icon: Icon(
                   _isVoiceListening ? Icons.mic_off_rounded : Icons.mic_rounded,
                 ),
-                tooltip: _isVoiceListening ? 'Stop voice chat' : 'Start voice chat',
               ),
               IconButton(
                 onPressed: _openSettings,
@@ -459,13 +451,6 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ],
           ),
-          floatingActionButton: activeConversation == null
-              ? FloatingActionButton.extended(
-                  onPressed: _createNewChat,
-                  icon: const Icon(Icons.add_comment_rounded),
-                  label: const Text('New Chat'),
-                )
-              : null,
         );
       },
     );

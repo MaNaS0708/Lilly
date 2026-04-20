@@ -32,10 +32,9 @@ class SettingsService {
   Future<List<String>> getVoiceLanguageCodes() async {
     final prefs = await SharedPreferences.getInstance();
     final stored = prefs.getStringList(voiceLanguagesKey) ?? const [];
-    final valid = stored
+    return stored
         .where((code) => VoiceLanguage.values.any((item) => item.code == code))
         .toList();
-    return valid;
   }
 
   Future<void> setSaveChatsLocally(bool value) async {
@@ -65,10 +64,5 @@ class SettingsService {
         .toSet()
         .toList();
     await prefs.setStringList(voiceLanguagesKey, valid);
-  }
-
-  Future<void> clearVoiceLanguageCodes() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(voiceLanguagesKey);
   }
 }

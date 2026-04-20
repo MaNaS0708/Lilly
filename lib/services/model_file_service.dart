@@ -42,6 +42,7 @@ class ModelFileService {
     if (strict) {
       return size == ModelSetupConstants.expectedModelBytes;
     }
+
     return size >= ModelSetupConstants.minimumValidModelBytes;
   }
 
@@ -92,18 +93,58 @@ class ModelFileService {
     final dir = await getVoskModelDirectory(languageCode);
     if (!await dir.exists()) return false;
 
-    final requiredPaths = [
+    final nestedLayout = [
       '${dir.path}/am/final.mdl',
       '${dir.path}/conf/mfcc.conf',
       '${dir.path}/graph/Gr.fst',
-      '${dir.path}/graph/words.txt',
     ];
 
-    for (final path in requiredPaths) {
-      if (!await File(path).exists()) return false;
+    final flatLayout = [
+      '${dir.path}/final.mdl',
+      '${dir.path}/mfcc.conf',
+      '${dir.path}/Gr.fst',
+    ];
+
+    final nestedValid = await _allFilesExist(nestedLayout);
+    if (nestedValid) return true;
+
+    final flatValid = await _allFilesExist(flatLayout);
+    if (flatValid) return true;
+
+    return false;
+  }
+
+  Future<bool> _allFilesExist(List<String> paths) async {
+    for (final path in paths) {
+      if (!await File(path).exists()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<ModelFileInfo> inspectVoskModel(String languageCode) async {
+    final path = await getVoskModelPath(languageCode);
+    final dir = Directory(path);
+    final exists = await dir.exists();
+
+    var sizeBytes = 0;
+    if (exists) {
+      await for (final entity in dir.list(recursive: true, followLinks: false)) {
+        if (entity is File) {
+          sizeBytes += await entity.length();
+        }
+      }
     }
 
-    return true;
+    final isValid = exists && await hasValidVoskModel(languageCode);
+
+    return ModelFileInfo(
+      exists: exists,
+      sizeBytes: sizeBytes,
+      isValid: isValid,
+      path: path,
+    );
   }
 
   Future<void> deleteModelIfExists() async {

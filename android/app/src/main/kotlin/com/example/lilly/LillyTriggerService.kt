@@ -56,7 +56,7 @@ class LillyTriggerService : Service() {
         isRunning = false
         val preferences = TriggerPreferences(this)
         if (preferences.isAutostartEnabled()) {
-          scheduleRestart()
+            scheduleRestart()
         }
         super.onDestroy()
     }
@@ -85,7 +85,11 @@ class LillyTriggerService : Service() {
 
     private fun buildNotification(): Notification {
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP,
+            )
             putExtra("open_app_only", true)
         }
         val openAppPendingIntent = PendingIntent.getActivity(
@@ -96,7 +100,11 @@ class LillyTriggerService : Service() {
         )
 
         val voiceChatIntent = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP,
+            )
             putExtra("open_voice_chat", true)
         }
         val voiceChatPendingIntent = PendingIntent.getActivity(
