@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import '../controllers/model_controller.dart';
 import '../services/image_picker_service.dart';
 import '../services/settings_service.dart';
 import '../services/trigger_service.dart';
+import '../services/voice_service.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/conversation_drawer.dart';
 import '../widgets/error_message_banner.dart';
@@ -29,12 +31,17 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
   final SettingsService _settingsService = SettingsService();
   final TriggerService _triggerService = TriggerService();
+  final VoiceService _voiceService = VoiceService();
 
   late final ModelController _modelController;
   late final ChatController _chatController;
   late final ConversationListController _conversationListController;
 
+  StreamSubscription<VoiceEvent>? _voiceSubscription;
+
   bool _enableImageInput = true;
+  bool _isVoiceListening = false;
+  bool _isVoicePreparing = false;
 
   @override
   void initState() {
@@ -42,6 +49,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _modelController = ModelController();
     _chatController = ChatController(modelController: _modelController);
     _conversationListController = ConversationListController();
+    _listenToVoiceEvents();
     _bootstrap();
   }
 
@@ -61,22 +69,80 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _listenToVoiceEvents() {
+    _voiceSubscription = _voiceService.events.listen((event) async {
+      if (!mounted) return;
+
+      switch (event.type) {
+        case 'ready':
+          setState(() {
+            _isVoicePreparing = false;
+          });
+          break;
+        case 'listening':
+          setState(() {
+            _isVoicePreparing = false;
+            _isVoiceListening = true;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Listening offline...'),
+              duration: Duration(milliseconds: 1000),
+            ),
+          );
+          break;
+        case 'partial':
+          final partial = (event.text ?? '').trim();
+          if (partial.isNotEmpty) {
+            _textController.text = partial;
+            _textController.selection = TextSelection.fromPosition(
+              TextPosition(offset: _textController.text.length),
+            );
+          }
+          break;
+        case 'final':
+          setState(() {
+            _isVoiceListening = false;
+          });
+
+          final transcript = (event.text ?? '').trim();
+          if (transcript.isEmpty) return;
+
+          _textController.text = transcript;
+          _textController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _textController.text.length),
+          );
+          await _sendMessage();
+          break;
+        case 'stopped':
+          setState(() {
+            _isVoiceListening = false;
+            _isVoicePreparing = false;
+          });
+          break;
+        case 'error':
+          setState(() {
+            _isVoiceListening = false;
+            _isVoicePreparing = false;
+          });
+          _chatController.showError(
+            event.message ?? 'Offline voice capture failed.',
+          );
+          break;
+      }
+    });
+  }
+
   Future<void> _consumePendingTriggerAction() async {
     final action = await _triggerService.consumePendingLaunchAction();
     if (!mounted || action == null) return;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
 
       switch (action) {
         case 'voice_chat':
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Voice trigger received. Vosk voice capture will plug in here next.',
-              ),
-            ),
-          );
+          await _startVoiceChat();
           break;
         case 'open_app':
           ScaffoldMessenger.of(context).showSnackBar(
@@ -90,8 +156,47 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  Future<void> _startVoiceChat() async {
+    if (_isVoicePreparing || _isVoiceListening) return;
+
+    setState(() {
+      _isVoicePreparing = true;
+    });
+
+    final initialized = await _voiceService.initializeVoiceModel();
+    if (!initialized) {
+      if (!mounted) return;
+      setState(() {
+        _isVoicePreparing = false;
+      });
+      _chatController.showError(
+        'Vosk model is not ready. Make sure the Android asset model is installed correctly.',
+      );
+      return;
+    }
+
+    final started = await _voiceService.startListening();
+    if (!started && mounted) {
+      setState(() {
+        _isVoicePreparing = false;
+        _isVoiceListening = false;
+      });
+      _chatController.showError('Could not start offline voice listening.');
+    }
+  }
+
+  Future<void> _stopVoiceChat() async {
+    await _voiceService.stopListening();
+    if (!mounted) return;
+    setState(() {
+      _isVoiceListening = false;
+      _isVoicePreparing = false;
+    });
+  }
+
   @override
   void dispose() {
+    _voiceSubscription?.cancel();
     _textController.dispose();
     _chatController.dispose();
     _conversationListController.dispose();
@@ -200,7 +305,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _createNewChat() async {
-    final conversation = await _conversationListController.createNewConversation();
+    final conversation =
+        await _conversationListController.createNewConversation();
     _chatController.attachConversation(conversation);
 
     if (!mounted) return;
@@ -270,6 +376,12 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   String _loadingLabel() {
+    if (_isVoicePreparing) {
+      return 'Preparing offline voice model...';
+    }
+    if (_isVoiceListening) {
+      return 'Listening offline...';
+    }
     if (_modelController.isLoading) {
       return 'Loading local model into memory...';
     }
@@ -289,7 +401,10 @@ class _ChatScreenState extends State<ChatScreen> {
       ]),
       builder: (context, _) {
         final activeConversation = _chatController.conversation;
-        final isBusy = _chatController.isSending || _modelController.isLoading;
+        final isBusy = _chatController.isSending ||
+            _modelController.isLoading ||
+            _isVoicePreparing ||
+            _isVoiceListening;
 
         return Scaffold(
           drawer: ConversationDrawer(
@@ -304,6 +419,15 @@ class _ChatScreenState extends State<ChatScreen> {
           appBar: AppBar(
             title: Text(activeConversation?.title ?? 'Lilly'),
             actions: [
+              IconButton(
+                onPressed: _isVoiceListening
+                    ? _stopVoiceChat
+                    : (isBusy ? null : _startVoiceChat),
+                icon: Icon(
+                  _isVoiceListening ? Icons.mic_off_rounded : Icons.mic_rounded,
+                ),
+                tooltip: _isVoiceListening ? 'Stop voice chat' : 'Start voice chat',
+              ),
               IconButton(
                 onPressed: _openSettings,
                 icon: const Icon(Icons.tune_rounded),

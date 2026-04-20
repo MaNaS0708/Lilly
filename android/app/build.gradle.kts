@@ -39,4 +39,5 @@ flutter {
 
 dependencies {
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.9.0")
+    implementation("com.alphacephei:vosk-android:0.3.32")
 }

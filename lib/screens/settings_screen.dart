@@ -4,6 +4,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../controllers/model_controller.dart';
 import '../models/model_status.dart';
 import '../models/trigger_capabilities.dart';
+import '../models/voice_language.dart';
 import '../services/model_file_service.dart';
 import '../services/settings_service.dart';
 import '../services/trigger_service.dart';
@@ -31,6 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loading = true;
   bool _triggerBusy = false;
   bool _triggerEnabled = false;
+  String? _voiceLanguageCode;
 
   ModelFileInfo? _modelInfo;
   TriggerCapabilities? _triggerCapabilities;
@@ -48,6 +50,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final enableImages = await _settingsService.getEnableImageInput();
     final showDebug = await _settingsService.getShowDebugInfo();
     final triggerEnabled = await _settingsService.getTriggerEnabled();
+    final voiceLanguageCode = await _settingsService.getVoiceLanguageCode();
     final modelInfo = await _modelFileService.inspectModelFile(strict: true);
     final triggerCapabilities = await _triggerService.getCapabilities();
 
@@ -58,6 +61,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _enableImageInput = enableImages;
       _showDebugInfo = showDebug;
       _triggerEnabled = triggerEnabled;
+      _voiceLanguageCode = voiceLanguageCode;
       _modelInfo = modelInfo;
       _triggerCapabilities = triggerCapabilities;
       _loading = false;
@@ -99,6 +103,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _modelFileService.deleteModelIfExists();
 
     if (!mounted) return;
+
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(SplashScreen.routeName, (route) => false);
+  }
+
+  Future<void> _changeVoiceLanguage(String? value) async {
+    if (value == null || value == _voiceLanguageCode) return;
+
+    await _settingsService.setVoiceLanguageCode(value);
+    await _modelController?.shutdown();
+
+    if (!mounted) return;
+
+    setState(() {
+      _voiceLanguageCode = value;
+    });
 
     Navigator.of(
       context,
@@ -212,6 +233,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final modelError = _modelController?.errorMessage;
         final modelInfo = _modelInfo;
         final trigger = _triggerCapabilities;
+        final selectedVoiceLanguage = _voiceLanguageCode == null
+            ? null
+            : VoiceLanguage.fromCode(_voiceLanguageCode);
 
         return Scaffold(
           appBar: AppBar(
@@ -261,6 +285,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 24),
+              _SectionTitle('Voice Language'),
+              const SizedBox(height: 12),
+              _SettingsCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Speech recognition language',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Only the selected offline voice pack will be kept on the device. Changing this will reopen setup and download the new pack.',
+                      style: TextStyle(
+                        color: Color(0xFF4B5563),
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: _voiceLanguageCode,
+                      decoration: const InputDecoration(
+                        labelText: 'Voice language',
+                      ),
+                      items: VoiceLanguage.values
+                          .map(
+                            (language) => DropdownMenuItem<String>(
+                              value: language.code,
+                              child: Text(language.label),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _changeVoiceLanguage,
+                    ),
+                    if (selectedVoiceLanguage != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Current voice pack: ${selectedVoiceLanguage.label}',
+                        style: const TextStyle(
+                          color: Color(0xFF4B5563),
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
               _SectionTitle('Local Model'),
               const SizedBox(height: 12),
               _SettingsCard(
@@ -274,7 +349,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     if (modelInfo != null) ...[
                       _InfoRow(
-                        title: 'Model file',
+                        title: 'Gemma file',
                         value: modelInfo.exists ? 'Present' : 'Missing',
                       ),
                       _InfoRow(
@@ -380,7 +455,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Use the persistent notification actions to open Lilly or enter the future voice-chat path. This is the reliable trigger we will connect to Vosk next.',
+                      'Use the persistent notification actions to open Lilly or start offline voice chat.',
                       style: TextStyle(
                         color: Color(0xFF4B5563),
                         height: 1.4,

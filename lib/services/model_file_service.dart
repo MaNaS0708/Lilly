@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import '../config/model_setup_constants.dart';
+import '../models/voice_language.dart';
 
 class ModelFileInfo {
   const ModelFileInfo({
@@ -68,31 +69,33 @@ class ModelFileService {
     );
   }
 
-  Future<String> getVoskArchivePath() async {
+  Future<String> getVoskArchivePath(String languageCode) async {
     final dir = await getModelDirectoryPath();
-    return '$dir/${ModelSetupConstants.voskArchiveFileName}';
+    final language = VoiceLanguage.fromCode(languageCode);
+    return '$dir/${language.voskArchiveFileName}';
   }
 
-  Future<File> getVoskArchiveFile() async {
-    return File(await getVoskArchivePath());
+  Future<File> getVoskArchiveFile(String languageCode) async {
+    return File(await getVoskArchivePath(languageCode));
   }
 
-  Future<String> getVoskModelPath() async {
+  Future<String> getVoskModelPath(String languageCode) async {
     final dir = await getModelDirectoryPath();
-    return '$dir/${ModelSetupConstants.voskModelDirectoryName}';
+    final language = VoiceLanguage.fromCode(languageCode);
+    return '$dir/${language.voskDirectoryName}';
   }
 
-  Future<Directory> getVoskModelDirectory() async {
-    return Directory(await getVoskModelPath());
+  Future<Directory> getVoskModelDirectory(String languageCode) async {
+    return Directory(await getVoskModelPath(languageCode));
   }
 
-  Future<bool> voskModelExists() async {
-    final dir = await getVoskModelDirectory();
+  Future<bool> voskModelExists(String languageCode) async {
+    final dir = await getVoskModelDirectory(languageCode);
     return dir.exists();
   }
 
-  Future<bool> hasValidVoskModel() async {
-    final dir = await getVoskModelDirectory();
+  Future<bool> hasValidVoskModel(String languageCode) async {
+    final dir = await getVoskModelDirectory(languageCode);
     if (!await dir.exists()) return false;
 
     final requiredPaths = [
@@ -111,8 +114,8 @@ class ModelFileService {
     return true;
   }
 
-  Future<ModelFileInfo> inspectVoskModel() async {
-    final path = await getVoskModelPath();
+  Future<ModelFileInfo> inspectVoskModel(String languageCode) async {
+    final path = await getVoskModelPath(languageCode);
     final dir = Directory(path);
     final exists = await dir.exists();
 
@@ -125,7 +128,7 @@ class ModelFileService {
       }
     }
 
-    final isValid = exists && await hasValidVoskModel();
+    final isValid = exists && await hasValidVoskModel(languageCode);
 
     return ModelFileInfo(
       exists: exists,
@@ -142,21 +145,40 @@ class ModelFileService {
     }
   }
 
-  Future<void> deleteVoskIfExists() async {
-    final archive = await getVoskArchiveFile();
+  Future<void> deleteVoskIfExists(String languageCode) async {
+    final archive = await getVoskArchiveFile(languageCode);
     if (await archive.exists()) {
       await archive.delete();
     }
 
-    final dir = await getVoskModelDirectory();
+    final dir = await getVoskModelDirectory(languageCode);
     if (await dir.exists()) {
       await dir.delete(recursive: true);
     }
   }
 
-  Future<bool> hasAllRuntimeModels() async {
+  Future<void> deleteUnusedVoiceModels(Iterable<String> keepCodes) async {
+    final keep = keepCodes.toSet();
+
+    for (final language in VoiceLanguage.values) {
+      if (!keep.contains(language.code)) {
+        await deleteVoskIfExists(language.code);
+      }
+    }
+  }
+
+  Future<bool> hasAllRuntimeModels({
+    required Iterable<String> voiceLanguageCodes,
+  }) async {
     final gemma = await hasValidModelFile(strict: true);
-    final vosk = await hasValidVoskModel();
-    return gemma && vosk;
+    if (!gemma) return false;
+
+    for (final code in voiceLanguageCodes) {
+      if (!await hasValidVoskModel(code)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }

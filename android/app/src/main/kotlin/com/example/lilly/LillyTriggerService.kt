@@ -145,16 +145,8 @@ class LillyTriggerService : Service() {
             .setContentTitle("Lilly assistant standby")
             .setContentText("Notification trigger is active. Model stays unloaded until needed.")
             .setContentIntent(activityPendingIntent)
-            .addAction(
-                0,
-                "Open Lilly",
-                openAppPendingIntent,
-            )
-            .addAction(
-                0,
-                "Start Voice Chat",
-                voiceChatPendingIntent,
-            )
+            .addAction(0, "Open Lilly", openAppPendingIntent)
+            .addAction(0, "Start Voice Chat", voiceChatPendingIntent)
             .setOngoing(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)

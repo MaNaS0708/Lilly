@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../config/model_setup_constants.dart';
 import '../controllers/model_setup_controller.dart';
 import '../models/model_download_state.dart';
+import '../models/voice_language.dart';
+import '../services/settings_service.dart';
 import 'chat_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -15,26 +16,61 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  late final ModelSetupController _modelSetupController;
+  final SettingsService _settingsService = SettingsService();
+
+  ModelSetupController? _modelSetupController;
+  bool _loadingBootstrap = true;
+  bool _needsLanguageSelection = false;
+  String? _selectedLanguageCode;
 
   @override
   void initState() {
     super.initState();
-    _modelSetupController = ModelSetupController()..addListener(_onStateChanged);
-    _modelSetupController.initialize();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    final storedLanguage = await _settingsService.getVoiceLanguageCode();
+
+    if (!mounted) return;
+
+    if (storedLanguage == null) {
+      setState(() {
+        _loadingBootstrap = false;
+        _needsLanguageSelection = true;
+      });
+      return;
+    }
+
+    _startModelSetup();
+  }
+
+  void _startModelSetup() {
+    _modelSetupController?.removeListener(_onStateChanged);
+    _modelSetupController?.dispose();
+
+    final controller = ModelSetupController()..addListener(_onStateChanged);
+
+    setState(() {
+      _modelSetupController = controller;
+      _loadingBootstrap = false;
+      _needsLanguageSelection = false;
+    });
+
+    controller.initialize();
   }
 
   @override
   void dispose() {
-    _modelSetupController.removeListener(_onStateChanged);
-    _modelSetupController.dispose();
+    _modelSetupController?.removeListener(_onStateChanged);
+    _modelSetupController?.dispose();
     super.dispose();
   }
 
   void _onStateChanged() {
-    if (!mounted) return;
+    if (!mounted || _modelSetupController == null) return;
 
-    if (_modelSetupController.state == ModelDownloadState.ready) {
+    if (_modelSetupController!.state == ModelDownloadState.ready) {
       Navigator.of(context).pushReplacementNamed(ChatScreen.routeName);
     } else {
       setState(() {});
@@ -42,13 +78,16 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _handlePrimaryAction() async {
-    switch (_modelSetupController.state) {
+    final controller = _modelSetupController;
+    if (controller == null) return;
+
+    switch (controller.state) {
       case ModelDownloadState.needsDownload:
       case ModelDownloadState.error:
-        await _modelSetupController.startSetup();
+        await controller.startSetup();
         break;
       case ModelDownloadState.awaitingLicenseAcceptance:
-        await _modelSetupController.openLicensePage();
+        await controller.openLicensePage();
         break;
       default:
         break;
@@ -56,15 +95,26 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _handleSecondaryAction() async {
-    if (_modelSetupController.state ==
-        ModelDownloadState.awaitingLicenseAcceptance) {
-      await _modelSetupController.retryAfterLicenseAcceptance();
+    final controller = _modelSetupController;
+    if (controller == null) return;
+
+    if (controller.state == ModelDownloadState.awaitingLicenseAcceptance) {
+      await controller.retryAfterLicenseAcceptance();
       return;
     }
 
-    if (_modelSetupController.canCancel) {
-      await _modelSetupController.cancelDownload();
+    if (controller.canCancel) {
+      await controller.cancelDownload();
     }
+  }
+
+  Future<void> _confirmLanguageSelection() async {
+    if (_selectedLanguageCode == null) return;
+
+    await _settingsService.setVoiceLanguageCode(_selectedLanguageCode!);
+
+    if (!mounted) return;
+    _startModelSetup();
   }
 
   String _titleForState(ModelDownloadState state) {
@@ -78,7 +128,7 @@ class _SplashScreenState extends State<SplashScreen> {
       case ModelDownloadState.awaitingLicenseAcceptance:
         return 'Accept Model License';
       case ModelDownloadState.downloading:
-        return _modelSetupController.phaseLabel;
+        return _modelSetupController?.phaseLabel ?? 'Downloading';
       case ModelDownloadState.ready:
         return 'Ready';
       case ModelDownloadState.error:
@@ -87,27 +137,32 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   String _messageForState(ModelDownloadState state) {
+    final controller = _modelSetupController;
+
     switch (state) {
       case ModelDownloadState.checking:
-        return 'Checking Gemma and offline voice models on this device.';
+        return 'Checking the multilingual Gemma model and your selected voice model on this device.';
       case ModelDownloadState.needsDownload:
-        return 'Lilly will download Gemma plus the offline voice model during setup.';
+        return 'Lilly will download one multilingual Gemma model plus your selected offline voice model.';
       case ModelDownloadState.authenticating:
         return 'Sign in to Hugging Face so Lilly can access the Gemma model.';
       case ModelDownloadState.awaitingLicenseAcceptance:
         return 'Open the model page, accept the license, then come back here and continue.';
       case ModelDownloadState.downloading:
-        return _modelSetupController.phaseLabel;
+        return controller?.phaseLabel ?? 'Downloading...';
       case ModelDownloadState.ready:
-        return 'All models are ready.';
+        return 'Gemma and your voice model are ready.';
       case ModelDownloadState.error:
-        return _modelSetupController.errorMessage ??
+        return controller?.errorMessage ??
             'Something went wrong during setup.';
     }
   }
 
   String? _primaryLabel() {
-    switch (_modelSetupController.state) {
+    final controller = _modelSetupController;
+    if (controller == null) return null;
+
+    switch (controller.state) {
       case ModelDownloadState.needsDownload:
         return 'Start Setup';
       case ModelDownloadState.awaitingLicenseAcceptance:
@@ -120,19 +175,147 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   String? _secondaryLabel() {
-    if (_modelSetupController.state ==
-        ModelDownloadState.awaitingLicenseAcceptance) {
+    final controller = _modelSetupController;
+    if (controller == null) return null;
+
+    if (controller.state == ModelDownloadState.awaitingLicenseAcceptance) {
       return 'I Accepted The License';
     }
-    if (_modelSetupController.canCancel) {
+    if (controller.canCancel) {
       return 'Cancel Download';
     }
     return null;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final state = _modelSetupController.state;
+  Widget _buildLanguageSelection() {
+    return Scaffold(
+      body: Container(
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFF7F8FA), Color(0xFFEFF2FF)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 96,
+                      height: 96,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF1E3A8A), Color(0xFF4F46E5)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF4F46E5).withValues(alpha: 0.25),
+                            blurRadius: 24,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.translate_rounded,
+                        color: Colors.white,
+                        size: 44,
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    const Text(
+                      'Choose Voice Language',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Pick the offline speech language Lilly should download first. Only that voice pack will be downloaded.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15,
+                        height: 1.5,
+                        color: Color(0xFF4B5563),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x0A111827),
+                            blurRadius: 18,
+                            offset: Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: VoiceLanguage.values.map((language) {
+                          final selected = _selectedLanguageCode == language.code;
+                          return RadioListTile<String>(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(language.label),
+                            value: language.code,
+                            groupValue: _selectedLanguageCode,
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedLanguageCode = value;
+                              });
+                            },
+                            selected: selected,
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: _selectedLanguageCode == null
+                            ? null
+                            : _confirmLanguageSelection,
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text('Continue'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSetupScreen() {
+    final controller = _modelSetupController;
+    if (controller == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final state = controller.state;
     final primaryLabel = _primaryLabel();
     final secondaryLabel = _secondaryLabel();
 
@@ -213,13 +396,13 @@ class _SplashScreenState extends State<SplashScreen> {
                     if (state == ModelDownloadState.downloading) ...[
                       const SizedBox(height: 28),
                       LinearProgressIndicator(
-                        value: _modelSetupController.progress == 0
+                        value: controller.progress == 0
                             ? null
-                            : _modelSetupController.progress,
+                            : controller.progress,
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        '${(_modelSetupController.progress * 100).toStringAsFixed(0)}%',
+                        '${(controller.progress * 100).toStringAsFixed(0)}%',
                         style: TextStyle(
                           color: Colors.grey.shade700,
                           fontWeight: FontWeight.w600,
@@ -254,5 +437,20 @@ class _SplashScreenState extends State<SplashScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loadingBootstrap) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_needsLanguageSelection) {
+      return _buildLanguageSelection();
+    }
+
+    return _buildSetupScreen();
   }
 }

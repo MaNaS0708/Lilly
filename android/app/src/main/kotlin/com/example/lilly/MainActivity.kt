@@ -26,6 +26,7 @@ import org.vosk.Model
 import org.vosk.Recognizer
 import org.vosk.android.RecognitionListener
 import org.vosk.android.SpeechService
+import org.vosk.android.StorageService
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -38,6 +39,9 @@ class MainActivity : FlutterActivity(), RecognitionListener {
                 // surfaced later as readable initialization failure
             }
         }
+
+        private const val VOSK_ASSET_PATH = "vosk-model-small-en-us-0.15"
+        private const val VOSK_STORAGE_NAME = "vosk-model"
     }
 
     private val modelChannelName = "lilly/model"
@@ -57,7 +61,6 @@ class MainActivity : FlutterActivity(), RecognitionListener {
     private var pendingLaunchAction: String? = null
 
     private var voiceModel: Model? = null
-    private var voiceModelPath: String? = null
     private var voiceModelLoading = false
     private var speechService: SpeechService? = null
     private var voiceEventSink: EventChannel.EventSink? = null
@@ -132,7 +135,7 @@ class MainActivity : FlutterActivity(), RecognitionListener {
                                 "microphonePermissionRecommended" to true,
                                 "isRunning" to LillyTriggerService.isRunning,
                                 "autostartEnabled" to preferences.isAutostartEnabled(),
-                                "notes" to "The reliable trigger is the persistent notification. Voice chat uses the downloaded offline Vosk model and Gemma stays on-demand.",
+                                "notes" to "The reliable trigger is the persistent notification. Use Open Lilly or Start Voice Chat. Vosk powers the offline voice-chat path.",
                             )
                         )
                     }
@@ -214,10 +217,7 @@ class MainActivity : FlutterActivity(), RecognitionListener {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, voiceChannelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "initializeVoiceModel" -> {
-                        val path = call.argument<String>("modelPath")
-                        initializeVoiceModel(path, result)
-                    }
+                    "initializeVoiceModel" -> initializeVoiceModel(result)
                     "startVoiceListening" -> startVoiceListening(result)
                     "stopVoiceListening" -> stopVoiceListening(result)
                     else -> result.notImplemented()
@@ -233,45 +233,8 @@ class MainActivity : FlutterActivity(), RecognitionListener {
         }
     }
 
-    private fun initializeVoiceModel(path: String?, result: MethodChannel.Result) {
-        if (path.isNullOrBlank()) {
-            emitVoiceEvent("error", message = "No Vosk model path was provided.")
-            result.success(
-                mapOf(
-                    "success" to false,
-                    "errorMessage" to "No Vosk model path was provided.",
-                )
-            )
-            return
-        }
-
-        val modelDir = File(path)
-        if (!modelDir.exists() || !modelDir.isDirectory) {
-            emitVoiceEvent("error", message = "Vosk model directory not found.")
-            result.success(
-                mapOf(
-                    "success" to false,
-                    "errorMessage" to "Vosk model directory not found at: $path",
-                )
-            )
-            return
-        }
-
-        if (!File("$path/am/final.mdl").exists() ||
-            !File("$path/conf/mfcc.conf").exists() ||
-            !File("$path/graph/Gr.fst").exists()
-        ) {
-            emitVoiceEvent("error", message = "Vosk model files are incomplete.")
-            result.success(
-                mapOf(
-                    "success" to false,
-                    "errorMessage" to "Vosk model files are incomplete or corrupted.",
-                )
-            )
-            return
-        }
-
-        if (voiceModel != null && voiceModelPath == path) {
+    private fun initializeVoiceModel(result: MethodChannel.Result) {
+        if (voiceModel != null) {
             result.success(mapOf("success" to true))
             return
         }
@@ -289,29 +252,30 @@ class MainActivity : FlutterActivity(), RecognitionListener {
         voiceModelLoading = true
         emitVoiceEvent("initializing", message = "Preparing offline voice model...")
 
-        try {
-            stopSpeechServiceInternal()
-            voiceModel?.close()
-            voiceModel = Model(path)
-            voiceModelPath = path
-            voiceModelLoading = false
-            emitVoiceEvent("ready")
-            result.success(mapOf("success" to true))
-        } catch (e: Exception) {
-            voiceModelLoading = false
-            voiceModel = null
-            voiceModelPath = null
-            emitVoiceEvent(
-                "error",
-                message = e.message ?: "Failed to initialize Vosk model.",
-            )
-            result.success(
-                mapOf(
-                    "success" to false,
-                    "errorMessage" to (e.message ?: "Failed to initialize Vosk model."),
+        StorageService.unpack(
+            this,
+            VOSK_ASSET_PATH,
+            VOSK_STORAGE_NAME,
+            { model ->
+                voiceModelLoading = false
+                voiceModel = model
+                emitVoiceEvent("ready")
+                result.success(mapOf("success" to true))
+            },
+            { exception ->
+                voiceModelLoading = false
+                emitVoiceEvent(
+                    "error",
+                    message = exception.message ?: "Failed to unpack Vosk model.",
                 )
-            )
-        }
+                result.success(
+                    mapOf(
+                        "success" to false,
+                        "errorMessage" to (exception.message ?: "Failed to unpack Vosk model."),
+                    )
+                )
+            },
+        )
     }
 
     private fun startVoiceListening(result: MethodChannel.Result) {
@@ -451,18 +415,18 @@ class MainActivity : FlutterActivity(), RecognitionListener {
 
         val file = File(path)
         if (!file.exists()) {
-          modelReady = false
-          modelLoading = false
-          modelPath = null
-          modelError = "Model file not found at: $path"
-          result.success(
-              mapOf(
-                  "success" to false,
-                  "status" to "error",
-                  "errorMessage" to modelError,
-              )
-          )
-          return
+            modelReady = false
+            modelLoading = false
+            modelPath = null
+            modelError = "Model file not found at: $path"
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "status" to "error",
+                    "errorMessage" to modelError,
+                )
+            )
+            return
         }
 
         if (file.length() <= 0L) {
@@ -756,8 +720,6 @@ class MainActivity : FlutterActivity(), RecognitionListener {
 
     override fun onDestroy() {
         stopSpeechServiceInternal()
-        voiceModel?.close()
-        voiceModel = null
         disposeModel()
         modelExecutor.shutdown()
         super.onDestroy()

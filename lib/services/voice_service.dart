@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import 'model_file_service.dart';
+import 'settings_service.dart';
 
 class VoiceEvent {
   const VoiceEvent({
@@ -25,13 +26,17 @@ class VoiceEvent {
 }
 
 class VoiceService {
-  VoiceService({ModelFileService? modelFileService})
-    : _modelFileService = modelFileService ?? ModelFileService();
+  VoiceService({
+    ModelFileService? modelFileService,
+    SettingsService? settingsService,
+  }) : _modelFileService = modelFileService ?? ModelFileService(),
+       _settingsService = settingsService ?? SettingsService();
 
   static const MethodChannel _methodChannel = MethodChannel('lilly/voice');
   static const EventChannel _eventChannel = EventChannel('lilly/voice_events');
 
   final ModelFileService _modelFileService;
+  final SettingsService _settingsService;
 
   Stream<VoiceEvent> get events {
     return _eventChannel.receiveBroadcastStream().map((event) {
@@ -40,7 +45,12 @@ class VoiceService {
   }
 
   Future<bool> initializeVoiceModel() async {
-    final modelPath = await _modelFileService.getVoskModelPath();
+    final selectedCode = await _settingsService.getVoiceLanguageCode();
+    if (selectedCode == null) {
+      return false;
+    }
+
+    final modelPath = await _modelFileService.getVoskModelPath(selectedCode);
 
     final result = await _methodChannel.invokeMethod<Map<dynamic, dynamic>>(
       'initializeVoiceModel',

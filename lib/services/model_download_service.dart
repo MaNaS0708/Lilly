@@ -4,6 +4,7 @@ import 'package:archive/archive.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/model_setup_constants.dart';
+import '../models/voice_language.dart';
 import 'model_file_service.dart';
 
 class ModelDownloadService {
@@ -32,23 +33,21 @@ class ModelDownloadService {
   }
 
   Future<void> downloadVoskModel({
+    required VoiceLanguage language,
     required void Function(double progress) onProgress,
   }) async {
-    final archiveFile = await _modelFileService.getVoskArchiveFile();
+    final archiveFile = await _modelFileService.getVoskArchiveFile(language.code);
     final targetDir = Directory(await _modelFileService.getModelDirectoryPath());
 
     IOSink? sink;
 
     try {
-      final request = http.Request(
-        'GET',
-        Uri.parse(ModelSetupConstants.voskModelUrl),
-      );
-
+      final request = http.Request('GET', Uri.parse(language.voskModelUrl));
       final response = await request.send();
+
       if (response.statusCode != 200) {
         throw Exception(
-          'Vosk download failed with status ${response.statusCode}',
+          '${language.label} voice download failed with status ${response.statusCode}',
         );
       }
 
@@ -71,8 +70,8 @@ class ModelDownloadService {
       sink = null;
 
       final size = await archiveFile.length();
-      if (size < ModelSetupConstants.minimumValidVoskArchiveBytes) {
-        throw Exception('Downloaded Vosk archive is too small.');
+      if (size < language.minimumArchiveBytes) {
+        throw Exception('Downloaded ${language.label} voice archive is too small.');
       }
 
       final bytes = await archiveFile.readAsBytes();
@@ -90,9 +89,11 @@ class ModelDownloadService {
         }
       }
 
-      final valid = await _modelFileService.hasValidVoskModel();
+      final valid = await _modelFileService.hasValidVoskModel(language.code);
       if (!valid) {
-        throw Exception('Extracted Vosk model is invalid or incomplete.');
+        throw Exception(
+          'Extracted ${language.label} voice model is invalid or incomplete.',
+        );
       }
 
       try {
@@ -106,12 +107,12 @@ class ModelDownloadService {
         await sink?.close();
       } catch (_) {}
 
-      await _modelFileService.deleteVoskIfExists();
+      await _modelFileService.deleteVoskIfExists(language.code);
 
       throw Exception(
         e is Exception
             ? e.toString().replaceFirst('Exception: ', '')
-            : 'Vosk model download failed.',
+            : '${language.label} voice model download failed.',
       );
     }
   }
