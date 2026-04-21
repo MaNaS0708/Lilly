@@ -43,6 +43,7 @@ class VoiceService {
   bool _speechReady = false;
   bool _listening = false;
 
+  FlutterTts get tts => _tts;
   Stream<VoiceEvent> get events => _events.stream;
 
   Future<bool> initializeVoiceModel() async {
