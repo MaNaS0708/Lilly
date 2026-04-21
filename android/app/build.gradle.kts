@@ -39,5 +39,10 @@ flutter {
 
 dependencies {
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.9.0")
-    implementation("com.alphacephei:vosk-android:0.3.32")
+
+    implementation("net.java.dev.jna:jna:5.18.1@aar")
+    implementation("com.alphacephei:vosk-android:0.3.75@aar") {
+        exclude(group = "net.java.dev.jna", module = "jna")
+    }
 }
+

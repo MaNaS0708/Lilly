@@ -26,7 +26,6 @@ import org.vosk.Model
 import org.vosk.Recognizer
 import org.vosk.android.RecognitionListener
 import org.vosk.android.SpeechService
-import org.vosk.android.StorageService
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -39,9 +38,6 @@ class MainActivity : FlutterActivity(), RecognitionListener {
                 // surfaced later as readable initialization failure
             }
         }
-
-        private const val VOSK_ASSET_PATH = "vosk-model-small-en-us-0.15"
-        private const val VOSK_STORAGE_NAME = "vosk-model"
     }
 
     private val modelChannelName = "lilly/model"
@@ -135,7 +131,7 @@ class MainActivity : FlutterActivity(), RecognitionListener {
                                 "microphonePermissionRecommended" to true,
                                 "isRunning" to LillyTriggerService.isRunning,
                                 "autostartEnabled" to preferences.isAutostartEnabled(),
-                                "notes" to "The reliable trigger is the persistent notification. Use Open Lilly or Start Voice Chat. Vosk powers the offline voice-chat path.",
+                                "notes" to "The reliable trigger is the persistent notification. Voice chat uses the downloaded offline Vosk model and Gemma stays on-demand.",
                             )
                         )
                     }
@@ -217,7 +213,10 @@ class MainActivity : FlutterActivity(), RecognitionListener {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, voiceChannelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "initializeVoiceModel" -> initializeVoiceModel(result)
+                    "initializeVoiceModel" -> {
+                        val path = call.argument<String>("modelPath")
+                        initializeVoiceModel(path, result)
+                    }
                     "startVoiceListening" -> startVoiceListening(result)
                     "stopVoiceListening" -> stopVoiceListening(result)
                     else -> result.notImplemented()
@@ -234,93 +233,85 @@ class MainActivity : FlutterActivity(), RecognitionListener {
     }
 
     private fun initializeVoiceModel(path: String?, result: MethodChannel.Result) {
-    if (path.isNullOrBlank()) {
-        emitVoiceEvent("error", message = "No Vosk model path was provided.")
-        result.success(
-            mapOf(
-                "success" to false,
-                "errorMessage" to "No Vosk model path was provided.",
+        if (path.isNullOrBlank()) {
+            emitVoiceEvent("error", message = "No Vosk model path was provided.")
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to "No Vosk model path was provided.",
+                )
             )
-        )
-        return
-    }
+            return
+        }
 
-    val modelDir = File(path)
-    if (!modelDir.exists() || !modelDir.isDirectory) {
-        emitVoiceEvent("error", message = "Vosk model directory not found.")
-        result.success(
-            mapOf(
-                "success" to false,
-                "errorMessage" to "Vosk model directory not found at: $path",
+        val modelDir = File(path)
+        if (!modelDir.exists() || !modelDir.isDirectory) {
+            emitVoiceEvent("error", message = "Vosk model directory not found.")
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to "Vosk model directory not found at: $path",
+                )
             )
-        )
-        return
-    }
+            return
+        }
 
-    val nestedValid =
-        File("$path/am/final.mdl").exists() &&
-        File("$path/conf/mfcc.conf").exists() &&
-        File("$path/graph/Gr.fst").exists()
+        val nestedValid =
+            File("$path/am/final.mdl").exists() &&
+                File("$path/conf/mfcc.conf").exists() &&
+                File("$path/graph/Gr.fst").exists()
 
-    val flatValid =
-        File("$path/final.mdl").exists() &&
-        File("$path/mfcc.conf").exists() &&
-        File("$path/Gr.fst").exists()
+        val flatValid =
+            File("$path/final.mdl").exists() &&
+                File("$path/mfcc.conf").exists() &&
+                File("$path/Gr.fst").exists()
 
-    if (!nestedValid && !flatValid) {
-        emitVoiceEvent("error", message = "Vosk model files are incomplete.")
-        result.success(
-            mapOf(
-                "success" to false,
-                "errorMessage" to "Vosk model files are incomplete or corrupted.",
+        if (!nestedValid && !flatValid) {
+            emitVoiceEvent("error", message = "Vosk model files are incomplete.")
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to "Vosk model files are incomplete or corrupted.",
+                )
             )
-        )
-        return
-    }
+            return
+        }
 
-    if (voiceModel != null && voiceModelPath == path) {
-        result.success(mapOf("success" to true))
-        return
-    }
-
-    if (voiceModelLoading) {
-        result.success(
-            mapOf(
-                "success" to false,
-                "errorMessage" to "Voice model is already loading.",
+        if (voiceModelLoading) {
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to "Voice model is already loading.",
+                )
             )
-        )
-        return
-    }
+            return
+        }
 
-    voiceModelLoading = true
-    emitVoiceEvent("initializing", message = "Preparing offline voice model...")
+        voiceModelLoading = true
+        emitVoiceEvent("initializing", message = "Preparing offline voice model...")
 
-    try {
-        stopSpeechServiceInternal()
-        voiceModel?.close()
-        voiceModel = Model(path)
-        voiceModelPath = path
-        voiceModelLoading = false
-        emitVoiceEvent("ready")
-        result.success(mapOf("success" to true))
-    } catch (e: Exception) {
-        voiceModelLoading = false
-        voiceModel = null
-        voiceModelPath = null
-        emitVoiceEvent(
-            "error",
-            message = e.message ?: "Failed to initialize Vosk model.",
-        )
-        result.success(
-            mapOf(
-                "success" to false,
-                "errorMessage" to (e.message ?: "Failed to initialize Vosk model."),
+        try {
+            stopSpeechServiceInternal()
+            closeVoiceModel()
+            voiceModel = Model(path)
+            voiceModelLoading = false
+            emitVoiceEvent("ready")
+            result.success(mapOf("success" to true))
+        } catch (e: Exception) {
+            voiceModelLoading = false
+            closeVoiceModel()
+            emitVoiceEvent(
+                "error",
+                message = e.message ?: "Failed to initialize Vosk model.",
             )
-        )
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to (e.message ?: "Failed to initialize Vosk model."),
+                )
+            )
+        }
     }
-}
-
 
     private fun startVoiceListening(result: MethodChannel.Result) {
         val model = voiceModel
@@ -370,6 +361,15 @@ class MainActivity : FlutterActivity(), RecognitionListener {
         } catch (_: Exception) {
         } finally {
             speechService = null
+        }
+    }
+
+    private fun closeVoiceModel() {
+        try {
+            voiceModel?.close()
+        } catch (_: Exception) {
+        } finally {
+            voiceModel = null
         }
     }
 
@@ -764,6 +764,7 @@ class MainActivity : FlutterActivity(), RecognitionListener {
 
     override fun onDestroy() {
         stopSpeechServiceInternal()
+        closeVoiceModel()
         disposeModel()
         modelExecutor.shutdown()
         super.onDestroy()
