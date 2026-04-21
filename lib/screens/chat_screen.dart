@@ -105,6 +105,11 @@ class _ChatScreenState extends State<ChatScreen> {
           final transcript = (event.text ?? '').trim();
           if (transcript.isEmpty) return;
 
+          if (_shouldCaptureSceneText(transcript)) {
+            await _captureAndProcessVisibleText(transcript);
+            return;
+          }
+
           _textController.text = transcript;
           _textController.selection = TextSelection.fromPosition(
             TextPosition(offset: _textController.text.length),
@@ -149,6 +154,44 @@ class _ChatScreenState extends State<ChatScreen> {
           break;
       }
     });
+  }
+
+  bool _shouldCaptureSceneText(String transcript) {
+    final normalized = transcript.toLowerCase();
+    return normalized.contains("what's in front of me") ||
+        normalized.contains('what is in front of me') ||
+        normalized.contains("read what's in front of me") ||
+        normalized.contains('read what is in front of me') ||
+        normalized.contains("what's written in front of me") ||
+        normalized.contains('what is written in front of me') ||
+        normalized.contains('read the text in front of me') ||
+        normalized.contains('scan the text in front of me');
+  }
+
+  Future<void> _captureAndProcessVisibleText(String transcript) async {
+    if (!_enableImageInput) {
+      _chatController.showError('Image input is disabled in settings.');
+      return;
+    }
+
+    try {
+      final image = await ImagePickerService.captureForTextRecognition();
+      if (image == null) {
+        if (_voiceConversationMode && mounted) {
+          await _startVoiceChat();
+        }
+        return;
+      }
+
+      _chatController.setSelectedImage(image);
+      _textController.text = transcript;
+      _textController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _textController.text.length),
+      );
+      await _sendMessage(speakReply: _voiceConversationMode);
+    } catch (e) {
+      _chatController.showError(e.toString());
+    }
   }
 
   Future<void> _consumePendingTriggerAction() async {
@@ -342,7 +385,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _createNewChat() async {
-    final conversation = await _conversationListController.createNewConversation();
+    final conversation =
+        await _conversationListController.createNewConversation();
     _chatController.attachConversation(conversation);
 
     if (!mounted) return;

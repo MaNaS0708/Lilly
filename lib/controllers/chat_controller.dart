@@ -1,13 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import '../controllers/model_controller.dart';
 import '../models/chat_conversation.dart';
 import '../models/chat_message.dart';
 import '../models/model_request.dart';
 import '../services/conversation_title_service.dart';
 import '../services/text_recognition_service.dart';
+import 'model_controller.dart';
 
 class ChatController extends ChangeNotifier {
   ChatController({
@@ -21,6 +22,9 @@ class ChatController extends ChangeNotifier {
            textRecognitionService ?? TextRecognitionService() {
     scrollController.addListener(_handleScrollPositionChanged);
   }
+
+  static const int _maxHistoryMessages = 6;
+  static const int _maxExtractedTextChars = 4000;
 
   final ModelController _modelController;
   final ConversationTitleService _conversationTitleService;
@@ -88,7 +92,7 @@ class ChatController extends ChangeNotifier {
     if (text.isEmpty && _selectedImage == null) return null;
 
     final image = _selectedImage;
-    final historySnapshot = List<ChatMessage>.from(current.messages);
+    final historySnapshot = _trimHistory(current.messages);
 
     final userMessage = ChatMessage(
       text: text,
@@ -120,7 +124,7 @@ class ChatController extends ChangeNotifier {
       return workingConversation;
     }
 
-    String effectivePrompt = text;
+    var effectivePrompt = text;
 
     if (image != null) {
       try {
@@ -128,8 +132,9 @@ class ChatController extends ChangeNotifier {
           image.path,
         );
 
-        if (extractedText.isEmpty && text.isEmpty) {
-          final failureText = 'No readable text was found in the selected image.';
+        if (extractedText.isEmpty) {
+          final failureText =
+              'I could not find readable text in that image. Right now I can read visible text, but I cannot describe objects yet.';
 
           final assistantError = ChatMessage(
             text: failureText,
@@ -225,15 +230,38 @@ class ChatController extends ChangeNotifier {
     return conversationWithReply;
   }
 
+  List<ChatMessage> _trimHistory(List<ChatMessage> source) {
+    if (source.length <= _maxHistoryMessages) {
+      return List<ChatMessage>.from(source);
+    }
+
+    return List<ChatMessage>.from(
+      source.sublist(source.length - _maxHistoryMessages),
+    );
+  }
+
   String _buildPromptFromImageText({
     required String userText,
     required String extractedText,
   }) {
     final cleanUserText = userText.trim();
-    final cleanExtractedText = extractedText.trim();
+    var cleanExtractedText = extractedText.trim();
 
-    if (cleanExtractedText.isEmpty) {
-      return cleanUserText;
+    if (cleanExtractedText.length > _maxExtractedTextChars) {
+      cleanExtractedText =
+          cleanExtractedText.substring(0, _maxExtractedTextChars);
+    }
+
+    if (_looksLikeFrontOfMeIntent(cleanUserText)) {
+      return '''
+The user asked what is in front of them.
+
+Only use the visible text extracted from the camera image below.
+If the extracted text is incomplete or noisy, say so briefly and still help.
+
+Visible text from camera image:
+$cleanExtractedText
+''';
     }
 
     if (cleanUserText.isEmpty) {
@@ -252,6 +280,18 @@ Use this text extracted from the attached image:
 
 $cleanExtractedText
 ''';
+  }
+
+  bool _looksLikeFrontOfMeIntent(String text) {
+    final normalized = text.toLowerCase();
+    return normalized.contains("what's in front of me") ||
+        normalized.contains('what is in front of me') ||
+        normalized.contains("read what's in front of me") ||
+        normalized.contains('read what is in front of me') ||
+        normalized.contains("what's written in front of me") ||
+        normalized.contains('what is written in front of me') ||
+        normalized.contains('read the text in front of me') ||
+        normalized.contains('scan the text in front of me');
   }
 
   String _friendlyError(String raw) {
@@ -308,7 +348,7 @@ $cleanExtractedText
 
   @override
   void dispose() {
-    _textRecognitionService.dispose();
+    unawaited(_textRecognitionService.dispose());
     scrollController
       ..removeListener(_handleScrollPositionChanged)
       ..dispose();

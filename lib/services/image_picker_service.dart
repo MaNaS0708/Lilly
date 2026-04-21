@@ -18,7 +18,25 @@ class ImagePickerService {
 
     final file = await _picker.pickImage(
       source: ImageSource.camera,
-      imageQuality: 85,
+      imageQuality: 80,
+      maxWidth: 1800,
+    );
+
+    if (file == null) return null;
+    return File(file.path);
+  }
+
+  static Future<File?> captureForTextRecognition() async {
+    final allowed = await _permissionService.requestCameraPermission();
+    if (!allowed) {
+      throw Exception('Camera permission was denied.');
+    }
+
+    final file = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 72,
+      maxWidth: 1600,
+      preferredCameraDevice: CameraDevice.rear,
     );
 
     if (file == null) return null;
@@ -33,7 +51,8 @@ class ImagePickerService {
 
     final file = await _picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 85,
+      imageQuality: 80,
+      maxWidth: 1800,
     );
 
     if (file == null) return null;
