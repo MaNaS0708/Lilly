@@ -166,7 +166,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      'Select one or more offline speech languages. Lilly will download Gemma once and only the voice packs you select.',
+                      'Select one or more speech languages. Lilly will download Gemma once, then use phone speech recognition and spoken replies for voice chat.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 15,
@@ -251,7 +251,7 @@ class _SplashScreenState extends State<SplashScreen> {
     String messageForState() {
       switch (state) {
         case ModelDownloadState.checking:
-          return 'Checking Gemma and selected voice packs on this device.';
+          return 'Checking the Gemma model and your selected speech languages on this device.';
         case ModelDownloadState.needsDownload:
           return 'Selected languages: ${controller.requiredVoiceLanguageSummary}';
         case ModelDownloadState.authenticating:
@@ -261,7 +261,7 @@ class _SplashScreenState extends State<SplashScreen> {
         case ModelDownloadState.downloading:
           return '${controller.phaseLabel}\nCurrent file: ${controller.activeModelLabel}';
         case ModelDownloadState.ready:
-          return 'Gemma and selected voice packs are ready.';
+          return 'Gemma is ready. Voice chat will use your phone speech recognition and spoken replies.';
         case ModelDownloadState.error:
           return controller.errorMessage ?? 'Something went wrong during setup.';
       }
@@ -305,7 +305,9 @@ class _SplashScreenState extends State<SplashScreen> {
                     if (state == ModelDownloadState.downloading) ...[
                       const SizedBox(height: 24),
                       LinearProgressIndicator(
-                        value: controller.progress == 0 ? null : controller.progress,
+                        value: controller.progress == 0
+                            ? null
+                            : controller.progress,
                       ),
                       const SizedBox(height: 10),
                       Text('${(controller.progress * 100).toStringAsFixed(0)}%'),

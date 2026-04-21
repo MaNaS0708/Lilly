@@ -4,7 +4,7 @@ import 'package:lilly/main.dart';
 
 void main() {
   testWidgets('Lilly app boots', (tester) async {
-    await tester.pumpWidget(const VisionChatApp());
-    expect(find.text('Preparing Lilly'), findsOneWidget);
+    await tester.pumpWidget(const LillyApp());
+    expect(find.text('Choose Voice Languages'), findsOneWidget);
   });
 }

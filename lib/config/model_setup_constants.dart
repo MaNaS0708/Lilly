@@ -18,12 +18,4 @@ class ModelSetupConstants {
   static const int minimumValidModelBytes = 3600000000;
   static const String expectedSha256 =
       'f335f2bfd1b758dc6476db16c0f41854bd6237e2658d604cbe566bcefd00a7bc';
-
-  static const String voskModelDirectoryName = 'vosk-model-small-en-us-0.15';
-  static const String voskArchiveFileName = 'vosk-model-small-en-us-0.15.zip';
-
-  static const String voskModelUrl =
-      'https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip';
-
-  static const int minimumValidVoskArchiveBytes = 20000000;
 }

@@ -42,6 +42,8 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _enableImageInput = true;
   bool _isVoiceListening = false;
   bool _isVoicePreparing = false;
+  bool _isVoiceSpeaking = false;
+  bool _voiceConversationMode = false;
 
   @override
   void initState() {
@@ -83,6 +85,7 @@ class _ChatScreenState extends State<ChatScreen> {
           setState(() {
             _isVoicePreparing = false;
             _isVoiceListening = true;
+            _isVoiceSpeaking = false;
           });
           break;
         case 'partial':
@@ -106,7 +109,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _textController.selection = TextSelection.fromPosition(
             TextPosition(offset: _textController.text.length),
           );
-          await _sendMessage();
+          await _sendMessage(speakReply: _voiceConversationMode);
           break;
         case 'stopped':
           setState(() {
@@ -114,13 +117,34 @@ class _ChatScreenState extends State<ChatScreen> {
             _isVoicePreparing = false;
           });
           break;
+        case 'speaking':
+          setState(() {
+            _isVoiceSpeaking = true;
+          });
+          break;
+        case 'spoken':
+          if (!mounted) return;
+          setState(() {
+            _isVoiceSpeaking = false;
+          });
+          if (_voiceConversationMode &&
+              !_isVoiceListening &&
+              !_isVoicePreparing &&
+              !_modelController.isGenerating) {
+            await Future<void>.delayed(const Duration(milliseconds: 250));
+            if (mounted && _voiceConversationMode) {
+              await _startVoiceChat();
+            }
+          }
+          break;
         case 'error':
           setState(() {
             _isVoiceListening = false;
             _isVoicePreparing = false;
+            _isVoiceSpeaking = false;
           });
           _chatController.showError(
-            event.message ?? 'Offline voice capture failed.',
+            event.message ?? 'Voice capture failed.',
           );
           break;
       }
@@ -136,7 +160,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
       switch (action) {
         case 'voice_chat':
-          await _startVoiceChat();
+          await _startVoiceConversation();
           break;
         case 'open_app':
           ScaffoldMessenger.of(context).showSnackBar(
@@ -148,6 +172,15 @@ class _ChatScreenState extends State<ChatScreen> {
           break;
       }
     });
+  }
+
+  Future<void> _startVoiceConversation() async {
+    if (!_voiceConversationMode) {
+      setState(() {
+        _voiceConversationMode = true;
+      });
+    }
+    await _startVoiceChat();
   }
 
   Future<void> _startVoiceChat() async {
@@ -163,9 +196,7 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _isVoicePreparing = false;
       });
-      _chatController.showError(
-        'Voice model is not ready yet. Finish setup first.',
-      );
+      _chatController.showError('Voice chat is not ready on this device yet.');
       return;
     }
 
@@ -175,16 +206,19 @@ class _ChatScreenState extends State<ChatScreen> {
         _isVoicePreparing = false;
         _isVoiceListening = false;
       });
-      _chatController.showError('Could not start offline voice listening.');
+      _chatController.showError('Could not start speech recognition.');
     }
   }
 
   Future<void> _stopVoiceChat() async {
     await _voiceService.stopListening();
+    await _voiceService.stopSpeaking();
     if (!mounted) return;
     setState(() {
       _isVoiceListening = false;
       _isVoicePreparing = false;
+      _isVoiceSpeaking = false;
+      _voiceConversationMode = false;
     });
   }
 
@@ -196,6 +230,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _conversationListController.dispose();
     _modelController.shutdown();
     _modelController.dispose();
+    _voiceService.dispose();
     super.dispose();
   }
 
@@ -275,7 +310,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Future<void> _sendMessage() async {
+  Future<void> _sendMessage({bool speakReply = false}) async {
     final text = _textController.text.trim();
     final hasImage = _chatController.selectedImage != null;
 
@@ -295,6 +330,14 @@ class _ChatScreenState extends State<ChatScreen> {
     if (updatedConversation != null) {
       _textController.clear();
       await _conversationListController.upsertConversation(updatedConversation);
+
+      final lastMessage = updatedConversation.messages.isEmpty
+          ? null
+          : updatedConversation.messages.last;
+
+      if (speakReply && lastMessage != null && !lastMessage.isUser) {
+        await _voiceService.speakReply(lastMessage.text);
+      }
     }
   }
 
@@ -370,10 +413,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   String _loadingLabel() {
     if (_isVoicePreparing) {
-      return 'Preparing offline voice model...';
+      return 'Preparing voice chat...';
     }
     if (_isVoiceListening) {
-      return 'Listening offline...';
+      return 'Listening...';
+    }
+    if (_isVoiceSpeaking) {
+      return 'Speaking reply...';
     }
     if (_modelController.isLoading) {
       return 'Loading local model into memory...';
@@ -397,7 +443,8 @@ class _ChatScreenState extends State<ChatScreen> {
         final isBusy = _chatController.isSending ||
             _modelController.isLoading ||
             _isVoicePreparing ||
-            _isVoiceListening;
+            _isVoiceListening ||
+            _isVoiceSpeaking;
 
         return Scaffold(
           drawer: ConversationDrawer(
@@ -413,11 +460,19 @@ class _ChatScreenState extends State<ChatScreen> {
             title: Text(activeConversation?.title ?? 'Lilly'),
             actions: [
               IconButton(
-                onPressed: _isVoiceListening
+                onPressed: (_isVoiceListening ||
+                        _isVoicePreparing ||
+                        _isVoiceSpeaking ||
+                        _voiceConversationMode)
                     ? _stopVoiceChat
-                    : (isBusy ? null : _startVoiceChat),
+                    : (isBusy ? null : _startVoiceConversation),
                 icon: Icon(
-                  _isVoiceListening ? Icons.mic_off_rounded : Icons.mic_rounded,
+                  (_isVoiceListening ||
+                          _isVoicePreparing ||
+                          _isVoiceSpeaking ||
+                          _voiceConversationMode)
+                      ? Icons.mic_off_rounded
+                      : Icons.mic_rounded,
                 ),
               ),
               IconButton(
@@ -447,7 +502,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 isSending: isBusy,
                 onPickImage: _showImageSourceSheet,
                 onRemoveImage: _chatController.removeSelectedImage,
-                onSend: _sendMessage,
+                onSend: () => _sendMessage(speakReply: _voiceConversationMode),
               ),
             ],
           ),

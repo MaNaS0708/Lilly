@@ -124,7 +124,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Select at least one voice language.'),
+          content: Text('Select at least one speech language.'),
         ),
       );
       return;
@@ -321,7 +321,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Select one or more offline voice packs. Lilly will reopen setup and download only the selected packs.',
+                      'Select one or more speech languages. Lilly will use the device speech recognizer and matching spoken replies for voice chat.',
                       style: TextStyle(
                         color: Color(0xFF4B5563),
                         height: 1.4,
@@ -340,7 +340,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (selectedLabels.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Text(
-                        'Current voice packs: $selectedLabels',
+                        'Current voice languages: $selectedLabels',
                         style: const TextStyle(
                           color: Color(0xFF4B5563),
                           height: 1.4,
@@ -470,7 +470,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Use the persistent notification actions to open Lilly or start offline voice chat.',
+                      'Use the persistent notification actions to open Lilly or start voice chat.',
                       style: TextStyle(
                         color: Color(0xFF4B5563),
                         height: 1.4,
