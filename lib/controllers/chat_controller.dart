@@ -7,19 +7,24 @@ import '../models/chat_conversation.dart';
 import '../models/chat_message.dart';
 import '../models/model_request.dart';
 import '../services/conversation_title_service.dart';
+import '../services/text_recognition_service.dart';
 
 class ChatController extends ChangeNotifier {
   ChatController({
     required ModelController modelController,
     ConversationTitleService? conversationTitleService,
+    TextRecognitionService? textRecognitionService,
   }) : _modelController = modelController,
        _conversationTitleService =
-           conversationTitleService ?? ConversationTitleService() {
+           conversationTitleService ?? ConversationTitleService(),
+       _textRecognitionService =
+           textRecognitionService ?? TextRecognitionService() {
     scrollController.addListener(_handleScrollPositionChanged);
   }
 
   final ModelController _modelController;
   final ConversationTitleService _conversationTitleService;
+  final TextRecognitionService _textRecognitionService;
   final ScrollController scrollController = ScrollController();
 
   ChatConversation? _conversation;
@@ -115,11 +120,68 @@ class ChatController extends ChangeNotifier {
       return workingConversation;
     }
 
+    String effectivePrompt = text;
+
+    if (image != null) {
+      try {
+        final extractedText = await _textRecognitionService.extractTextFromFile(
+          image.path,
+        );
+
+        if (extractedText.isEmpty && text.isEmpty) {
+          final failureText = 'No readable text was found in the selected image.';
+
+          final assistantError = ChatMessage(
+            text: failureText,
+            isUser: false,
+            createdAt: DateTime.now(),
+          );
+
+          workingConversation = _conversation!.copyWith(
+            messages: [..._conversation!.messages, assistantError],
+            updatedAt: DateTime.now(),
+          );
+
+          _conversation = workingConversation;
+          _errorMessage = failureText;
+          notifyListeners();
+          _scrollToBottomSoon();
+          return workingConversation;
+        }
+
+        effectivePrompt = _buildPromptFromImageText(
+          userText: text,
+          extractedText: extractedText,
+        );
+      } catch (e) {
+        final failureText = _friendlyError(
+          'Failed to read text from the selected image: $e',
+        );
+
+        final assistantError = ChatMessage(
+          text: failureText,
+          isUser: false,
+          createdAt: DateTime.now(),
+        );
+
+        workingConversation = _conversation!.copyWith(
+          messages: [..._conversation!.messages, assistantError],
+          updatedAt: DateTime.now(),
+        );
+
+        _conversation = workingConversation;
+        _errorMessage = failureText;
+        notifyListeners();
+        _scrollToBottomSoon();
+        return workingConversation;
+      }
+    }
+
     final result = await _modelController.generateResponse(
       ModelRequest(
-        prompt: text,
+        prompt: effectivePrompt,
         history: historySnapshot,
-        imagePath: image?.path,
+        imagePath: null,
       ),
     );
 
@@ -163,6 +225,35 @@ class ChatController extends ChangeNotifier {
     return conversationWithReply;
   }
 
+  String _buildPromptFromImageText({
+    required String userText,
+    required String extractedText,
+  }) {
+    final cleanUserText = userText.trim();
+    final cleanExtractedText = extractedText.trim();
+
+    if (cleanExtractedText.isEmpty) {
+      return cleanUserText;
+    }
+
+    if (cleanUserText.isEmpty) {
+      return '''
+Read the following text extracted from an image and help the user with it.
+
+Extracted image text:
+$cleanExtractedText
+''';
+    }
+
+    return '''
+$cleanUserText
+
+Use this text extracted from the attached image:
+
+$cleanExtractedText
+''';
+  }
+
   String _friendlyError(String raw) {
     final message = raw.replaceFirst('Exception: ', '').trim();
     final lower = message.toLowerCase();
@@ -185,6 +276,10 @@ class ChatController extends ChangeNotifier {
 
     if (lower.contains('download')) {
       return 'The model setup is not complete yet. Go back to setup, finish the download, and try again.';
+    }
+
+    if (lower.contains('read text from the selected image')) {
+      return 'Lilly could not read text from that image. Try a clearer photo or better lighting.';
     }
 
     return message;
@@ -213,6 +308,7 @@ class ChatController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _textRecognitionService.dispose();
     scrollController
       ..removeListener(_handleScrollPositionChanged)
       ..dispose();

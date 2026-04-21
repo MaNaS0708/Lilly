@@ -8,7 +8,6 @@ import '../controllers/conversation_list_controller.dart';
 import '../controllers/model_controller.dart';
 import '../services/image_picker_service.dart';
 import '../services/settings_service.dart';
-import '../services/streaming_tts_service.dart';
 import '../services/trigger_service.dart';
 import '../services/voice_service.dart';
 import '../widgets/confirm_action_dialog.dart';
@@ -37,13 +36,13 @@ class _ChatScreenState extends State<ChatScreen> {
   late final ModelController _modelController;
   late final ChatController _chatController;
   late final ConversationListController _conversationListController;
-  late final StreamingTtsService _streamingTts;
 
   StreamSubscription<VoiceEvent>? _voiceSubscription;
 
   bool _enableImageInput = true;
   bool _isVoiceListening = false;
   bool _isVoicePreparing = false;
+  bool _isVoiceSpeaking = false;
   bool _voiceConversationMode = false;
 
   @override
@@ -52,7 +51,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _modelController = ModelController();
     _chatController = ChatController(modelController: _modelController);
     _conversationListController = ConversationListController();
-    _streamingTts = StreamingTtsService(_voiceService.tts);
     _listenToVoiceEvents();
     _bootstrap();
   }
@@ -87,6 +85,7 @@ class _ChatScreenState extends State<ChatScreen> {
           setState(() {
             _isVoicePreparing = false;
             _isVoiceListening = true;
+            _isVoiceSpeaking = false;
           });
           break;
         case 'partial':
@@ -118,12 +117,35 @@ class _ChatScreenState extends State<ChatScreen> {
             _isVoicePreparing = false;
           });
           break;
+        case 'speaking':
+          setState(() {
+            _isVoiceSpeaking = true;
+          });
+          break;
+        case 'spoken':
+          if (!mounted) return;
+          setState(() {
+            _isVoiceSpeaking = false;
+          });
+          if (_voiceConversationMode &&
+              !_isVoiceListening &&
+              !_isVoicePreparing &&
+              !_modelController.isGenerating) {
+            await Future<void>.delayed(const Duration(milliseconds: 250));
+            if (mounted && _voiceConversationMode) {
+              await _startVoiceChat();
+            }
+          }
+          break;
         case 'error':
           setState(() {
             _isVoiceListening = false;
             _isVoicePreparing = false;
+            _isVoiceSpeaking = false;
           });
-          _chatController.showError(event.message ?? 'Voice capture failed.');
+          _chatController.showError(
+            event.message ?? 'Voice capture failed.',
+          );
           break;
       }
     });
@@ -190,12 +212,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _stopVoiceChat() async {
     await _voiceService.stopListening();
-    await _streamingTts.stop();
     await _voiceService.stopSpeaking();
     if (!mounted) return;
     setState(() {
       _isVoiceListening = false;
       _isVoicePreparing = false;
+      _isVoiceSpeaking = false;
       _voiceConversationMode = false;
     });
   }
@@ -208,7 +230,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _conversationListController.dispose();
     _modelController.shutdown();
     _modelController.dispose();
-    _streamingTts.dispose();
     _voiceService.dispose();
     super.dispose();
   }
@@ -305,11 +326,6 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    if (speakReply) {
-      await _streamingTts.stop();
-      _streamingTts.startMessage();
-    }
-
     final updatedConversation = await _chatController.sendMessage(text);
     if (updatedConversation != null) {
       _textController.clear();
@@ -320,22 +336,13 @@ class _ChatScreenState extends State<ChatScreen> {
           : updatedConversation.messages.last;
 
       if (speakReply && lastMessage != null && !lastMessage.isUser) {
-        _streamingTts.addText(lastMessage.text);
-        await _streamingTts.completeMessage();
-
-        if (_voiceConversationMode && mounted) {
-          await Future<void>.delayed(const Duration(milliseconds: 250));
-          if (mounted && _voiceConversationMode) {
-            await _startVoiceChat();
-          }
-        }
+        await _voiceService.speakReply(lastMessage.text);
       }
     }
   }
 
   Future<void> _createNewChat() async {
-    final conversation =
-        await _conversationListController.createNewConversation();
+    final conversation = await _conversationListController.createNewConversation();
     _chatController.attachConversation(conversation);
 
     if (!mounted) return;
@@ -411,7 +418,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_isVoiceListening) {
       return 'Listening...';
     }
-    if (_streamingTts.isSpeaking.value) {
+    if (_isVoiceSpeaking) {
       return 'Speaking reply...';
     }
     if (_modelController.isLoading) {
@@ -430,7 +437,6 @@ class _ChatScreenState extends State<ChatScreen> {
         _chatController,
         _conversationListController,
         _modelController,
-        _streamingTts.isSpeaking,
       ]),
       builder: (context, _) {
         final activeConversation = _chatController.conversation;
@@ -438,7 +444,7 @@ class _ChatScreenState extends State<ChatScreen> {
             _modelController.isLoading ||
             _isVoicePreparing ||
             _isVoiceListening ||
-            _streamingTts.isSpeaking.value;
+            _isVoiceSpeaking;
 
         return Scaffold(
           drawer: ConversationDrawer(
@@ -456,14 +462,14 @@ class _ChatScreenState extends State<ChatScreen> {
               IconButton(
                 onPressed: (_isVoiceListening ||
                         _isVoicePreparing ||
-                        _streamingTts.isSpeaking.value ||
+                        _isVoiceSpeaking ||
                         _voiceConversationMode)
                     ? _stopVoiceChat
                     : (isBusy ? null : _startVoiceConversation),
                 icon: Icon(
                   (_isVoiceListening ||
                           _isVoicePreparing ||
-                          _streamingTts.isSpeaking.value ||
+                          _isVoiceSpeaking ||
                           _voiceConversationMode)
                       ? Icons.mic_off_rounded
                       : Icons.mic_rounded,
