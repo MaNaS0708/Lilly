@@ -93,8 +93,58 @@ class _ConversationDrawerState extends State<ConversationDrawer> {
       child: SafeArea(
         child: Column(
           children: [
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFFFBF8), Color(0xFFF6D9E4)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: const Color(0xFFE9CAD4)),
+              ),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.asset(
+                      'assets/images/lilly_logo.jpg',
+                      width: 52,
+                      height: 52,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Lilly',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF473241),
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Gentle, local, and easy to talk to.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF7B6A74),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -110,9 +160,6 @@ class _ConversationDrawerState extends State<ConversationDrawer> {
                 decoration: const InputDecoration(
                   hintText: 'Search chats',
                   prefixIcon: Icon(Icons.search_rounded),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(14)),
-                  ),
                 ),
                 onChanged: (value) {
                   setState(() {
@@ -127,7 +174,7 @@ class _ConversationDrawerState extends State<ConversationDrawer> {
                   ? const Center(
                       child: Text(
                         'No chats found',
-                        style: TextStyle(color: Colors.black54),
+                        style: TextStyle(color: Color(0xFF7B6A74)),
                       ),
                     )
                   : ListView(
@@ -140,10 +187,10 @@ class _ConversationDrawerState extends State<ConversationDrawer> {
                               padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
                               child: Text(
                                 group.title,
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.grey.shade600,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF8E7985),
                                   letterSpacing: 0.3,
                                 ),
                               ),
@@ -156,32 +203,36 @@ class _ConversationDrawerState extends State<ConversationDrawer> {
                                 margin: const EdgeInsets.only(bottom: 6),
                                 decoration: BoxDecoration(
                                   color: selected
-                                      ? const Color(0xFFE8EAF6)
+                                      ? const Color(0xFFF7E0E9)
                                       : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius: BorderRadius.circular(16),
                                 ),
                                 child: ListTile(
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
+                                    borderRadius: BorderRadius.circular(16),
                                   ),
                                   leading: Icon(
-                                    Icons.chat_bubble_outline_rounded,
+                                    Icons.forum_rounded,
                                     color: selected
-                                        ? Colors.indigo
-                                        : Colors.grey.shade700,
+                                        ? const Color(0xFFC88298)
+                                        : const Color(0xFF7B6A74),
                                   ),
                                   title: Text(
                                     conversation.title,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF473241),
                                     ),
                                   ),
                                   subtitle: Text(
                                     _subtitle(conversation),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Color(0xFF7B6A74),
+                                    ),
                                   ),
                                   trailing: PopupMenuButton<String>(
                                     onSelected: (value) {

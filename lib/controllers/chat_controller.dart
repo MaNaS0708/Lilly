@@ -23,8 +23,8 @@ class ChatController extends ChangeNotifier {
     scrollController.addListener(_handleScrollPositionChanged);
   }
 
-  static const int _maxHistoryMessages = 6;
-  static const int _maxExtractedTextChars = 4000;
+  static const int _maxHistoryMessages = 5;
+  static const int _maxExtractedTextChars = 3200;
 
   final ModelController _modelController;
   final ConversationTitleService _conversationTitleService;
@@ -134,7 +134,7 @@ class ChatController extends ChangeNotifier {
 
         if (extractedText.isEmpty) {
           final failureText =
-              'I could not find readable text in that image. Right now I can read visible text, but I cannot describe objects yet.';
+              'I could not find readable text in that image. I can still help well with books, signs, labels, and documents when the text is visible.';
 
           final assistantError = ChatMessage(
             text: failureText,
@@ -256,10 +256,18 @@ class ChatController extends ChangeNotifier {
       return '''
 The user asked what is in front of them.
 
-Only use the visible text extracted from the camera image below.
-If the extracted text is incomplete or noisy, say so briefly and still help.
+You only have text extracted from the image, not full visual understanding.
+Use the extracted text to infer the most likely object in a careful and honest way.
 
-Visible text from camera image:
+If the text strongly looks like a book cover, say it appears to be a book and mention the likely title and author.
+If it looks like a sign, package, document, label, poster, notebook, or menu, say that naturally.
+Do not invent colors, shapes, or surrounding objects that are not supported by the text.
+If the text is incomplete or noisy, say that briefly and still help.
+
+Answer warmly, clearly, and simply.
+Keep the answer natural, like a kind person talking.
+
+Extracted text from the camera image:
 $cleanExtractedText
 ''';
     }
@@ -267,6 +275,8 @@ $cleanExtractedText
     if (cleanUserText.isEmpty) {
       return '''
 Read the following text extracted from an image and help the user with it.
+
+Answer in a warm, simple, easy-to-understand way.
 
 Extracted image text:
 $cleanExtractedText
@@ -279,6 +289,8 @@ $cleanUserText
 Use this text extracted from the attached image:
 
 $cleanExtractedText
+
+Answer warmly, clearly, and simply.
 ''';
   }
 
@@ -291,7 +303,8 @@ $cleanExtractedText
         normalized.contains("what's written in front of me") ||
         normalized.contains('what is written in front of me') ||
         normalized.contains('read the text in front of me') ||
-        normalized.contains('scan the text in front of me');
+        normalized.contains('scan the text in front of me') ||
+        normalized.contains('what do you see in front of me');
   }
 
   String _friendlyError(String raw) {

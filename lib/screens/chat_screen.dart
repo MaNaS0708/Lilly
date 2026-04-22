@@ -16,6 +16,7 @@ import '../widgets/error_message_banner.dart';
 import '../widgets/message_input_bar.dart';
 import '../widgets/message_list.dart';
 import '../widgets/rename_conversation_dialog.dart';
+import '../services/auto_capture_camera_screen.dart';
 import 'settings_screen.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -148,9 +149,7 @@ class _ChatScreenState extends State<ChatScreen> {
             _isVoicePreparing = false;
             _isVoiceSpeaking = false;
           });
-          _chatController.showError(
-            event.message ?? 'Voice capture failed.',
-          );
+          _chatController.showError(event.message ?? 'Voice capture failed.');
           break;
       }
     });
@@ -165,7 +164,8 @@ class _ChatScreenState extends State<ChatScreen> {
         normalized.contains("what's written in front of me") ||
         normalized.contains('what is written in front of me') ||
         normalized.contains('read the text in front of me') ||
-        normalized.contains('scan the text in front of me');
+        normalized.contains('scan the text in front of me') ||
+        normalized.contains('what do you see in front of me');
   }
 
   Future<void> _captureAndProcessVisibleText(String transcript) async {
@@ -175,7 +175,13 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     try {
-      final image = await ImagePickerService.captureForTextRecognition();
+      final image = await Navigator.of(context).push<File>(
+        MaterialPageRoute(
+          builder: (_) => const AutoCaptureCameraScreen(),
+          fullscreenDialog: true,
+        ),
+      );
+
       if (image == null) {
         if (_voiceConversationMode && mounted) {
           await _startVoiceChat();
@@ -191,6 +197,9 @@ class _ChatScreenState extends State<ChatScreen> {
       await _sendMessage(speakReply: _voiceConversationMode);
     } catch (e) {
       _chatController.showError(e.toString());
+      if (_voiceConversationMode && mounted) {
+        await _startVoiceChat();
+      }
     }
   }
 
@@ -208,7 +217,7 @@ class _ChatScreenState extends State<ChatScreen> {
         case 'open_app':
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Lilly opened from assistant trigger.'),
+              content: Text('Lilly opened from the assistant trigger.'),
               duration: Duration(milliseconds: 1200),
             ),
           );
@@ -456,21 +465,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   String _loadingLabel() {
-    if (_isVoicePreparing) {
-      return 'Preparing voice chat...';
-    }
-    if (_isVoiceListening) {
-      return 'Listening...';
-    }
-    if (_isVoiceSpeaking) {
-      return 'Speaking reply...';
-    }
-    if (_modelController.isLoading) {
-      return 'Loading local model into memory...';
-    }
-    if (_modelController.isGenerating) {
-      return 'Lilly is thinking...';
-    }
+    if (_isVoicePreparing) return 'Getting Lilly ready to listen...';
+    if (_isVoiceListening) return 'Listening...';
+    if (_isVoiceSpeaking) return 'Lilly is replying...';
+    if (_modelController.isLoading) return 'Loading Lilly on this device...';
+    if (_modelController.isGenerating) return 'Lilly is thinking...';
     return 'Working...';
   }
 
@@ -490,65 +489,98 @@ class _ChatScreenState extends State<ChatScreen> {
             _isVoiceListening ||
             _isVoiceSpeaking;
 
-        return Scaffold(
-          drawer: ConversationDrawer(
-            conversations: _conversationListController.conversations,
-            selectedConversationId:
-                _conversationListController.selectedConversation?.id,
-            onNewChat: _createNewChat,
-            onSelectConversation: _selectConversation,
-            onRenameConversation: _renameConversation,
-            onDeleteConversation: _deleteConversation,
+        return Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFFFFFBF8), Color(0xFFF9E6ED), Color(0xFFFDF8F4)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
           ),
-          appBar: AppBar(
-            title: Text(activeConversation?.title ?? 'Lilly'),
-            actions: [
-              IconButton(
-                onPressed: (_isVoiceListening ||
-                        _isVoicePreparing ||
-                        _isVoiceSpeaking ||
-                        _voiceConversationMode)
-                    ? _stopVoiceChat
-                    : (isBusy ? null : _startVoiceConversation),
-                icon: Icon(
-                  (_isVoiceListening ||
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            drawer: ConversationDrawer(
+              conversations: _conversationListController.conversations,
+              selectedConversationId:
+                  _conversationListController.selectedConversation?.id,
+              onNewChat: _createNewChat,
+              onSelectConversation: _selectConversation,
+              onRenameConversation: _renameConversation,
+              onDeleteConversation: _deleteConversation,
+            ),
+            appBar: AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              titleSpacing: 8,
+              title: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.asset(
+                      'assets/images/lilly_logo.jpg',
+                      width: 38,
+                      height: 38,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      activeConversation?.title ?? 'Lilly',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                IconButton(
+                  onPressed: (_isVoiceListening ||
                           _isVoicePreparing ||
                           _isVoiceSpeaking ||
                           _voiceConversationMode)
-                      ? Icons.mic_off_rounded
-                      : Icons.mic_rounded,
+                      ? _stopVoiceChat
+                      : (isBusy ? null : _startVoiceConversation),
+                  icon: Icon(
+                    (_isVoiceListening ||
+                            _isVoicePreparing ||
+                            _isVoiceSpeaking ||
+                            _voiceConversationMode)
+                        ? Icons.mic_off_rounded
+                        : Icons.mic_rounded,
+                  ),
                 ),
-              ),
-              IconButton(
-                onPressed: _openSettings,
-                icon: const Icon(Icons.tune_rounded),
-              ),
-            ],
-          ),
-          body: Column(
-            children: [
-              if (_chatController.errorMessage != null)
-                ErrorMessageBanner(
-                  message: _chatController.errorMessage!,
-                  onDismiss: _chatController.dismissError,
+                IconButton(
+                  onPressed: _openSettings,
+                  icon: const Icon(Icons.tune_rounded),
                 ),
-              Expanded(
-                child: MessageList(
-                  messages: _chatController.messages,
-                  scrollController: _chatController.scrollController,
-                  isLoading: isBusy,
-                  loadingLabel: _loadingLabel(),
+              ],
+            ),
+            body: Column(
+              children: [
+                if (_chatController.errorMessage != null)
+                  ErrorMessageBanner(
+                    message: _chatController.errorMessage!,
+                    onDismiss: _chatController.dismissError,
+                  ),
+                Expanded(
+                  child: MessageList(
+                    messages: _chatController.messages,
+                    scrollController: _chatController.scrollController,
+                    isLoading: isBusy,
+                    loadingLabel: _loadingLabel(),
+                  ),
                 ),
-              ),
-              MessageInputBar(
-                controller: _textController,
-                selectedImage: _chatController.selectedImage,
-                isSending: isBusy,
-                onPickImage: _showImageSourceSheet,
-                onRemoveImage: _chatController.removeSelectedImage,
-                onSend: () => _sendMessage(speakReply: _voiceConversationMode),
-              ),
-            ],
+                MessageInputBar(
+                  controller: _textController,
+                  selectedImage: _chatController.selectedImage,
+                  isSending: isBusy,
+                  onPickImage: _showImageSourceSheet,
+                  onRemoveImage: _chatController.removeSelectedImage,
+                  onSend: () => _sendMessage(speakReply: _voiceConversationMode),
+                ),
+              ],
+            ),
           ),
         );
       },

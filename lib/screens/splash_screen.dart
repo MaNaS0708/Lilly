@@ -123,9 +123,9 @@ class _SplashScreenState extends State<SplashScreen> {
         width: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFFF7F8FA), Color(0xFFEFF2FF)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            colors: [Color(0xFFFFFBF8), Color(0xFFF5D7E2), Color(0xFFFDF7F1)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
         ),
         child: SafeArea(
@@ -138,67 +138,115 @@ class _SplashScreenState extends State<SplashScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Container(
-                      width: 96,
-                      height: 96,
+                      width: 112,
+                      height: 112,
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF1E3A8A), Color(0xFF4F46E5)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        borderRadius: BorderRadius.circular(30),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x22C88298),
+                            blurRadius: 24,
+                            offset: Offset(0, 12),
+                          ),
+                        ],
                       ),
-                      child: const Icon(
-                        Icons.translate_rounded,
-                        color: Colors.white,
-                        size: 44,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(30),
+                        child: Image.asset(
+                          'assets/images/lilly_logo.jpg',
+                          fit: BoxFit.cover,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 28),
                     const Text(
-                      'Choose Voice Languages',
+                      'Welcome to Lilly',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF111827),
+                        fontSize: 30,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF473241),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                     const Text(
-                      'Select one or more speech languages. Lilly will download Gemma once, then use phone speech recognition and spoken replies for voice chat.',
+                      'Choose the speech languages you want Lilly to use.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 15,
-                        height: 1.5,
-                        color: Color(0xFF4B5563),
+                        fontSize: 15.5,
+                        height: 1.55,
+                        color: Color(0xFF776470),
                       ),
                     ),
                     const SizedBox(height: 24),
                     Container(
-                      padding: const EdgeInsets.all(18),
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(22),
-                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                        color: Colors.white.withValues(alpha: 0.93),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: const Color(0xFFE9CAD4)),
                       ),
-                      child: Column(
-                        children: VoiceLanguage.values.map((language) {
-                          return CheckboxListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(language.label),
-                            value: _selectedLanguageCodes.contains(language.code),
-                            onChanged: (checked) {
-                              setState(() {
-                                if (checked == true) {
-                                  _selectedLanguageCodes.add(language.code);
-                                } else {
-                                  _selectedLanguageCodes.remove(language.code);
-                                }
-                              });
-                            },
-                          );
-                        }).toList(),
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
+                          dividerColor: Colors.transparent,
+                        ),
+                        child: ExpansionTile(
+                          tilePadding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 6,
+                          ),
+                          childrenPadding: const EdgeInsets.fromLTRB(
+                            18,
+                            0,
+                            18,
+                            14,
+                          ),
+                          collapsedShape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          title: const Text(
+                            'Voice Languages',
+                            style: TextStyle(
+                              color: Color(0xFF473241),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          subtitle: Text(
+                            _selectedLanguageCodes.isEmpty
+                                ? 'Tap to choose languages'
+                                : '${_selectedLanguageCodes.length} selected',
+                            style: const TextStyle(
+                              color: Color(0xFF776470),
+                            ),
+                          ),
+                          children: VoiceLanguage.values.map((language) {
+                            return CheckboxListTile(
+                              contentPadding: EdgeInsets.zero,
+                              activeColor: const Color(0xFFC88298),
+                              title: Text(
+                                language.label,
+                                style: const TextStyle(
+                                  color: Color(0xFF473241),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              value: _selectedLanguageCodes.contains(
+                                language.code,
+                              ),
+                              onChanged: (checked) {
+                                setState(() {
+                                  if (checked == true) {
+                                    _selectedLanguageCodes.add(language.code);
+                                  } else {
+                                    _selectedLanguageCodes.remove(language.code);
+                                  }
+                                });
+                              },
+                            );
+                          }).toList(),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -261,7 +309,7 @@ class _SplashScreenState extends State<SplashScreen> {
         case ModelDownloadState.downloading:
           return '${controller.phaseLabel}\nCurrent file: ${controller.activeModelLabel}';
         case ModelDownloadState.ready:
-          return 'Gemma is ready. Voice chat will use your phone speech recognition and spoken replies.';
+          return 'Gemma is ready. Lilly can now chat by voice and read visible text around you.';
         case ModelDownloadState.error:
           return controller.errorMessage ?? 'Something went wrong during setup.';
       }
@@ -272,9 +320,9 @@ class _SplashScreenState extends State<SplashScreen> {
         width: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFFF7F8FA), Color(0xFFEFF2FF)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            colors: [Color(0xFFFFFBF8), Color(0xFFF5D7E2), Color(0xFFFDF7F1)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
         ),
         child: SafeArea(
@@ -286,31 +334,56 @@ class _SplashScreenState extends State<SplashScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.visibility_rounded, size: 56),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: Image.asset(
+                        'assets/images/lilly_logo.jpg',
+                        width: 88,
+                        height: 88,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
                     const SizedBox(height: 24),
                     Text(
                       controller.phaseLabel,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 28,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF473241),
                       ),
                     ),
                     const SizedBox(height: 12),
                     Text(
                       messageForState(),
                       textAlign: TextAlign.center,
-                      style: const TextStyle(height: 1.5),
+                      style: const TextStyle(
+                        fontSize: 15.5,
+                        height: 1.55,
+                        color: Color(0xFF776470),
+                      ),
                     ),
                     if (state == ModelDownloadState.downloading) ...[
                       const SizedBox(height: 24),
-                      LinearProgressIndicator(
-                        value: controller.progress == 0
-                            ? null
-                            : controller.progress,
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          minHeight: 10,
+                          value: controller.progress == 0
+                              ? null
+                              : controller.progress,
+                          backgroundColor: const Color(0xFFF3E1E8),
+                          color: const Color(0xFFC88298),
+                        ),
                       ),
                       const SizedBox(height: 10),
-                      Text('${(controller.progress * 100).toStringAsFixed(0)}%'),
+                      Text(
+                        '${(controller.progress * 100).toStringAsFixed(0)}%',
+                        style: const TextStyle(
+                          color: Color(0xFF473241),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ],
                     const SizedBox(height: 24),
                     if (primaryLabel() != null)

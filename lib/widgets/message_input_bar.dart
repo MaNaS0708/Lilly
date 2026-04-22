@@ -22,6 +22,10 @@ class MessageInputBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const blush = Color(0xFFF7E5EC);
+    const stroke = Color(0xFFE9CAD4);
+    const ink = Color(0xFF473241);
+
     return SafeArea(
       top: false,
       child: Column(
@@ -30,11 +34,11 @@ class MessageInputBar extends StatelessWidget {
           if (selectedImage != null)
             Container(
               margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.black12),
+                color: Colors.white.withValues(alpha: 0.95),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: stroke),
               ),
               child: Row(
                 children: [
@@ -52,7 +56,8 @@ class MessageInputBar extends StatelessWidget {
                     child: Text(
                       'Image attached',
                       style: TextStyle(
-                        fontWeight: FontWeight.w600,
+                        color: ink,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
@@ -65,19 +70,26 @@ class MessageInputBar extends StatelessWidget {
             ),
           Container(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                top: BorderSide(color: Color(0x14000000)),
+            decoration: BoxDecoration(
+              color: blush.withValues(alpha: 0.82),
+              border: const Border(
+                top: BorderSide(color: stroke),
               ),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                IconButton(
-                  onPressed: isSending ? null : onPickImage,
-                  icon: const Icon(Icons.add_a_photo_rounded),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.95),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: IconButton(
+                    onPressed: isSending ? null : onPickImage,
+                    icon: const Icon(Icons.add_a_photo_rounded),
+                  ),
                 ),
+                const SizedBox(width: 10),
                 Expanded(
                   child: TextField(
                     controller: controller,
@@ -86,20 +98,20 @@ class MessageInputBar extends StatelessWidget {
                     maxLines: 5,
                     textInputAction: TextInputAction.newline,
                     decoration: const InputDecoration(
-                      hintText: 'Type a message...',
+                      hintText: 'Talk to Lilly or type here...',
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(16)),
-                      ),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
+                        borderRadius: BorderRadius.all(Radius.circular(18)),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 IconButton.filled(
                   onPressed: isSending ? null : onSend,
+                  style: IconButton.styleFrom(
+                    backgroundColor: const Color(0xFFC88298),
+                    foregroundColor: Colors.white,
+                  ),
                   icon: isSending
                       ? const SizedBox(
                           width: 18,

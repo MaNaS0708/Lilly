@@ -45,34 +45,43 @@ class ChatBubble extends StatelessWidget {
         ? CrossAxisAlignment.end
         : CrossAxisAlignment.start;
 
-    final bubbleColor = message.isUser
-        ? Theme.of(context).colorScheme.primary
-        : Colors.white;
+    const userColor = Color(0xFFC88298);
+    const assistantColor = Colors.white;
+    const ink = Color(0xFF473241);
+    const stroke = Color(0xFFE9CAD4);
 
-    final textColor = message.isUser ? Colors.white : Colors.black87;
-    final timestampColor = message.isUser ? Colors.white70 : Colors.black54;
-    final actionColor = message.isUser ? Colors.white70 : Colors.black54;
+    final bubbleColor = message.isUser ? userColor : assistantColor;
+    final textColor = message.isUser ? Colors.white : ink;
+    final timestampColor = message.isUser
+        ? Colors.white.withValues(alpha: 0.78)
+        : const Color(0xFF7B6A74);
+    final actionColor = message.isUser
+        ? Colors.white.withValues(alpha: 0.78)
+        : const Color(0xFF7B6A74);
 
     return Column(
       crossAxisAlignment: alignment,
       children: [
         Container(
           margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(12),
-          constraints: const BoxConstraints(maxWidth: 320),
+          padding: const EdgeInsets.all(13),
+          constraints: const BoxConstraints(maxWidth: 330),
           decoration: BoxDecoration(
             color: bubbleColor,
-            borderRadius: BorderRadius.circular(18),
-            border: message.isUser ? null : Border.all(color: Colors.black12),
-            boxShadow: message.isUser
-                ? null
-                : [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(22),
+              topRight: const Radius.circular(22),
+              bottomLeft: Radius.circular(message.isUser ? 22 : 8),
+              bottomRight: Radius.circular(message.isUser ? 8 : 22),
+            ),
+            border: message.isUser ? null : Border.all(color: stroke),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -81,7 +90,7 @@ class ChatBubble extends StatelessWidget {
                 GestureDetector(
                   onTap: () => _openPreview(context),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                     child: Image.file(
                       File(message.imagePath!),
                       width: 220,
@@ -110,8 +119,8 @@ class ChatBubble extends StatelessWidget {
                   message.text,
                   style: TextStyle(
                     color: textColor,
-                    fontSize: 15,
-                    height: 1.4,
+                    fontSize: 15.5,
+                    height: 1.48,
                   ),
                 ),
               const SizedBox(height: 6),

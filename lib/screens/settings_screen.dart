@@ -328,25 +328,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    ...VoiceLanguage.values.map(
-                      (language) => CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(language.label),
-                        value: _voiceLanguageCodes.contains(language.code),
-                        onChanged: (checked) =>
-                            _toggleVoiceLanguage(language.code, checked ?? false),
+                    Theme(
+                      data: Theme.of(context).copyWith(
+                        dividerColor: Colors.transparent,
+                      ),
+                      child: ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        childrenPadding: const EdgeInsets.only(bottom: 8),
+                        title: const Text(
+                          'Languages',
+                          style: TextStyle(
+                            color: Color(0xFF111827),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        subtitle: Text(
+                          selectedLabels.isEmpty ? 'Tap to expand' : selectedLabels,
+                          style: const TextStyle(
+                            color: Color(0xFF6B7280),
+                            height: 1.35,
+                          ),
+                        ),
+                        children: VoiceLanguage.values.map((language) {
+                          return CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(language.label),
+                            value: _voiceLanguageCodes.contains(language.code),
+                            onChanged: (checked) => _toggleVoiceLanguage(
+                              language.code,
+                              checked ?? false,
+                            ),
+                          );
+                        }).toList(),
                       ),
                     ),
-                    if (selectedLabels.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Current voice languages: $selectedLabels',
-                        style: const TextStyle(
-                          color: Color(0xFF4B5563),
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
