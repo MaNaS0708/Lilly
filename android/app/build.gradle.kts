@@ -38,6 +38,6 @@ flutter {
 }
 
 dependencies {
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.9.0")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.2")
     implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
 }

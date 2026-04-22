@@ -16,7 +16,7 @@ import '../widgets/error_message_banner.dart';
 import '../widgets/message_input_bar.dart';
 import '../widgets/message_list.dart';
 import '../widgets/rename_conversation_dialog.dart';
-import '../services/auto_capture_camera_screen.dart';
+import 'auto_capture_camera_screen.dart';
 import 'settings_screen.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -517,7 +517,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(14),
                     child: Image.asset(
-                      'assets/images/lilly_logo.jpg',
+                      'assets/images/lilly_logo.png',
                       width: 38,
                       height: 38,
                       fit: BoxFit.cover,

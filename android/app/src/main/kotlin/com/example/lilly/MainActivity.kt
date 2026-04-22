@@ -328,13 +328,12 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun createEngine(path: String): Pair<Engine, String> {
-        val cachePath = applicationContext.cacheDir.absolutePath
+        private fun createEngine(path: String): Pair<Engine, String> {
         val errors = mutableListOf<String>()
 
         val attempts = listOf(
-            "gpu" to Backend.GPU(),
             "cpu" to Backend.CPU(),
+            "gpu" to Backend.GPU(),
         )
 
         for ((name, backend) in attempts) {
@@ -346,7 +345,6 @@ class MainActivity : FlutterActivity() {
                         visionBackend = backend,
                         audioBackend = backend,
                         maxNumTokens = 2048,
-                        cacheDir = cachePath,
                     )
                 )
                 newEngine.initialize()
@@ -360,6 +358,7 @@ class MainActivity : FlutterActivity() {
             "Unable to initialize LiteRT-LM backend. ${errors.joinToString(" | ")}"
         )
     }
+
 
     private fun generateResponse(
         prompt: String,
