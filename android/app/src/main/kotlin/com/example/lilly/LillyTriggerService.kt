@@ -12,17 +12,18 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import android.app.ActivityOptions
-
-
+import kotlin.concurrent.thread
 
 private const val TAG = "LillyTriggerService"
 
 class LillyTriggerService : Service() {
     companion object {
-        private const val CHANNEL_ID = "lilly_trigger_channel"
-        private const val CHANNEL_NAME = "Lilly Trigger Service"
-        private const val NOTIFICATION_ID = 4107
+        private const val STATUS_CHANNEL_ID = "lilly_trigger_status_channel"
+        private const val ALERT_CHANNEL_ID = "lilly_trigger_alert_channel"
+        private const val STATUS_CHANNEL_NAME = "Lilly Trigger Status"
+        private const val ALERT_CHANNEL_NAME = "Lilly Trigger Alerts"
+        private const val STATUS_NOTIFICATION_ID = 4107
+        private const val ALERT_NOTIFICATION_ID = 4108
         private const val RESTART_ACTION = "com.example.lilly.action.RESTART_TRIGGER_SERVICE"
 
         @Volatile
@@ -42,22 +43,22 @@ class LillyTriggerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
+        createNotificationChannels()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         isRunning = true
         serviceActive = true
 
-        val notification = buildNotification(currentStatusText)
+        val notification = buildStatusNotification(currentStatusText)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
-                NOTIFICATION_ID,
+                STATUS_NOTIFICATION_ID,
                 notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
             )
         } else {
-            startForeground(NOTIFICATION_ID, notification)
+            startForeground(STATUS_NOTIFICATION_ID, notification)
         }
 
         startWakeWordLoopIfNeeded()
@@ -86,7 +87,7 @@ class LillyTriggerService : Service() {
     private fun startWakeWordLoopIfNeeded() {
         if (detector != null || initThread?.isAlive == true) return
 
-        initThread = kotlin.concurrent.thread(
+        initThread = thread(
             start = true,
             isDaemon = true,
             name = "lilly-trigger-init",
@@ -117,40 +118,12 @@ class LillyTriggerService : Service() {
     }
 
     private fun handleWakeWordDetected() {
-        updateStatus("Opening voice chat...")
-
-        try {
-            val pendingIntent = buildVoiceChatPendingIntent()
-
-            if (Build.VERSION.SDK_INT >= 34) {
-                val sendOptions = ActivityOptions.makeBasic().apply {
-                    setPendingIntentBackgroundActivityStartMode(
-                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-                    )
-                }.toBundle()
-
-                pendingIntent.send(
-                    this,
-                    0,
-                    null,
-                    null,
-                    null,
-                    null,
-                    sendOptions,
-                )
-            } else {
-                pendingIntent.send()
-            }
-        } catch (e: PendingIntent.CanceledException) {
-            Log.e(TAG, "Failed to open voice chat", e)
-        }
-
-        updateStatus("Listening for \"${WakeWordConstants.wakePhraseLabel}\"")
+        updateStatus("Wake word heard. Tap notification to start voice chat.")
+        showWakeAlert()
     }
 
-
-    private fun buildNotification(contentText: String): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun buildStatusNotification(contentText: String): Notification {
+        return NotificationCompat.Builder(this, STATUS_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Lilly assistant standby")
             .setContentText(contentText)
@@ -159,9 +132,27 @@ class LillyTriggerService : Service() {
             .addAction(0, "Start Voice Chat", buildVoiceChatPendingIntent())
             .setOngoing(true)
             .setSilent(true)
-            .setOnlyAlertOnce(true)
+            .setOnlyAlertOnce(false)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
+    }
+
+    private fun buildWakeAlertNotification(): Notification {
+        return NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("Hey Lilly heard")
+            .setContentText("Tap to start voice chat.")
+            .setContentIntent(buildVoiceChatPendingIntent())
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .addAction(0, "Start Voice Chat", buildVoiceChatPendingIntent())
+            .build()
+    }
+
+    private fun showWakeAlert() {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager?.notify(ALERT_NOTIFICATION_ID, buildWakeAlertNotification())
     }
 
     private fun buildOpenAppPendingIntent(): PendingIntent {
@@ -182,7 +173,7 @@ class LillyTriggerService : Service() {
         )
     }
 
-        private fun buildVoiceChatPendingIntent(): PendingIntent {
+    private fun buildVoiceChatPendingIntent(): PendingIntent {
         val voiceChatIntent = Intent(this, MainActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -192,30 +183,18 @@ class LillyTriggerService : Service() {
             putExtra("open_voice_chat", true)
         }
 
-        val options = if (Build.VERSION.SDK_INT >= 34) {
-            ActivityOptions.makeBasic().apply {
-                setPendingIntentCreatorBackgroundActivityStartMode(
-                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-                )
-            }.toBundle()
-        } else {
-            null
-        }
-
         return PendingIntent.getActivity(
             this,
             11,
             voiceChatIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            options,
         )
     }
-
 
     private fun updateStatus(text: String) {
         currentStatusText = text
         val manager = getSystemService(NotificationManager::class.java)
-        manager?.notify(NOTIFICATION_ID, buildNotification(text))
+        manager?.notify(STATUS_NOTIFICATION_ID, buildStatusNotification(text))
     }
 
     private fun scheduleRestart() {
@@ -240,15 +219,24 @@ class LillyTriggerService : Service() {
         )
     }
 
-    private fun createNotificationChannel() {
+    private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
 
         val manager = getSystemService(NotificationManager::class.java)
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            CHANNEL_NAME,
+
+        val statusChannel = NotificationChannel(
+            STATUS_CHANNEL_ID,
+            STATUS_CHANNEL_NAME,
             NotificationManager.IMPORTANCE_LOW,
         )
-        manager.createNotificationChannel(channel)
+
+        val alertChannel = NotificationChannel(
+            ALERT_CHANNEL_ID,
+            ALERT_CHANNEL_NAME,
+            NotificationManager.IMPORTANCE_HIGH,
+        )
+
+        manager.createNotificationChannel(statusChannel)
+        manager.createNotificationChannel(alertChannel)
     }
 }

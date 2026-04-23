@@ -23,8 +23,8 @@ class ChatController extends ChangeNotifier {
     scrollController.addListener(_handleScrollPositionChanged);
   }
 
-  static const int _maxHistoryMessages = 5;
-  static const int _maxExtractedTextChars = 3200;
+  static const int _maxHistoryMessages = 0;
+  static const int _maxExtractedTextChars = 1400;
 
   final ModelController _modelController;
   final ConversationTitleService _conversationTitleService;
@@ -133,8 +133,8 @@ class ChatController extends ChangeNotifier {
         );
 
         if (extractedText.isEmpty) {
-          final failureText =
-              'I could not find readable text in that image. I can still help well with books, signs, labels, and documents when the text is visible.';
+          const failureText =
+              'I could not find readable text in that image. Try a clearer photo with better lighting.';
 
           final assistantError = ChatMessage(
             text: failureText,
@@ -231,6 +231,10 @@ class ChatController extends ChangeNotifier {
   }
 
   List<ChatMessage> _trimHistory(List<ChatMessage> source) {
+    if (_maxHistoryMessages <= 0) {
+      return const <ChatMessage>[];
+    }
+
     if (source.length <= _maxHistoryMessages) {
       return List<ChatMessage>.from(source);
     }
@@ -256,29 +260,21 @@ class ChatController extends ChangeNotifier {
       return '''
 The user asked what is in front of them.
 
-You only have text extracted from the image, not full visual understanding.
-Use the extracted text to infer the most likely object in a careful and honest way.
+You only have OCR text from the camera image.
+Infer the most likely object carefully and honestly.
+If it looks like a book, sign, package, label, document, menu, or poster, say that simply.
+Do not invent visual details not supported by the text.
 
-If the text strongly looks like a book cover, say it appears to be a book and mention the likely title and author.
-If it looks like a sign, package, document, label, poster, notebook, or menu, say that naturally.
-Do not invent colors, shapes, or surrounding objects that are not supported by the text.
-If the text is incomplete or noisy, say that briefly and still help.
-
-Answer warmly, clearly, and simply.
-Keep the answer natural, like a kind person talking.
-
-Extracted text from the camera image:
+OCR text:
 $cleanExtractedText
 ''';
     }
 
     if (cleanUserText.isEmpty) {
       return '''
-Read the following text extracted from an image and help the user with it.
+Help with this OCR text from an image.
 
-Answer in a warm, simple, easy-to-understand way.
-
-Extracted image text:
+OCR text:
 $cleanExtractedText
 ''';
     }
@@ -286,11 +282,8 @@ $cleanExtractedText
     return '''
 $cleanUserText
 
-Use this text extracted from the attached image:
-
+OCR text:
 $cleanExtractedText
-
-Answer warmly, clearly, and simply.
 ''';
   }
 
@@ -304,7 +297,11 @@ Answer warmly, clearly, and simply.
         normalized.contains('what is written in front of me') ||
         normalized.contains('read the text in front of me') ||
         normalized.contains('scan the text in front of me') ||
-        normalized.contains('what do you see in front of me');
+        normalized.contains('what do you see in front of me') ||
+        normalized.contains('tell me what is in front of me') ||
+        normalized.contains("tell me what's in front of me") ||
+        normalized.contains('see what is in front of me') ||
+        normalized.contains("see what's in front of me");
   }
 
   String _friendlyError(String raw) {
@@ -361,10 +358,8 @@ Answer warmly, clearly, and simply.
 
   @override
   void dispose() {
-    unawaited(_textRecognitionService.dispose());
-    scrollController
-      ..removeListener(_handleScrollPositionChanged)
-      ..dispose();
+    scrollController.removeListener(_handleScrollPositionChanged);
+    scrollController.dispose();
     super.dispose();
   }
 }

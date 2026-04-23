@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../controllers/chat_controller.dart';
 import '../controllers/conversation_list_controller.dart';
@@ -72,6 +73,22 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _vibrateInputStart() async {
+    await HapticFeedback.mediumImpact();
+  }
+
+  Future<void> _vibrateInputDone() async {
+    await HapticFeedback.heavyImpact();
+  }
+
+  Future<void> _vibrateResponseStart() async {
+    await HapticFeedback.selectionClick();
+  }
+
+  Future<void> _vibrateResponseDone() async {
+    await HapticFeedback.lightImpact();
+  }
+
   void _listenToVoiceEvents() {
     _voiceSubscription = _voiceService.events.listen((event) async {
       if (!mounted) return;
@@ -83,6 +100,7 @@ class _ChatScreenState extends State<ChatScreen> {
           });
           break;
         case 'listening':
+          await _vibrateInputStart();
           setState(() {
             _isVoicePreparing = false;
             _isVoiceListening = true;
@@ -99,6 +117,7 @@ class _ChatScreenState extends State<ChatScreen> {
           }
           break;
         case 'final':
+          await _vibrateInputDone();
           setState(() {
             _isVoiceListening = false;
           });
@@ -124,11 +143,13 @@ class _ChatScreenState extends State<ChatScreen> {
           });
           break;
         case 'speaking':
+          await _vibrateResponseStart();
           setState(() {
             _isVoiceSpeaking = true;
           });
           break;
         case 'spoken':
+          await _vibrateResponseDone();
           if (!mounted) return;
           setState(() {
             _isVoiceSpeaking = false;
@@ -165,7 +186,11 @@ class _ChatScreenState extends State<ChatScreen> {
         normalized.contains('what is written in front of me') ||
         normalized.contains('read the text in front of me') ||
         normalized.contains('scan the text in front of me') ||
-        normalized.contains('what do you see in front of me');
+        normalized.contains('what do you see in front of me') ||
+        normalized.contains('tell me what is in front of me') ||
+        normalized.contains("tell me what's in front of me") ||
+        normalized.contains('see what is in front of me') ||
+        normalized.contains("see what's in front of me");
   }
 
   Future<void> _captureAndProcessVisibleText(String transcript) async {
@@ -378,6 +403,9 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
+    await _vibrateInputDone();
+    await _vibrateResponseStart();
+
     final updatedConversation = await _chatController.sendMessage(text);
     if (updatedConversation != null) {
       _textController.clear();
@@ -386,6 +414,10 @@ class _ChatScreenState extends State<ChatScreen> {
       final lastMessage = updatedConversation.messages.isEmpty
           ? null
           : updatedConversation.messages.last;
+
+      if (lastMessage != null && !lastMessage.isUser) {
+        await _vibrateResponseDone();
+      }
 
       if (speakReply && lastMessage != null && !lastMessage.isUser) {
         await _voiceService.speakReply(lastMessage.text);

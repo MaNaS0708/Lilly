@@ -43,7 +43,6 @@ class VoiceService {
   bool _speechReady = false;
   bool _listening = false;
 
-  FlutterTts get tts => _tts;
   Stream<VoiceEvent> get events => _events.stream;
 
   Future<bool> initializeVoiceModel() async {
@@ -67,7 +66,18 @@ class VoiceService {
 
     _speechReady = await _speech.initialize(
       onStatus: (status) {
-        if (status == 'notListening' && _listening) {
+        final normalized = status.toLowerCase();
+
+        if (normalized.contains('listening')) {
+          if (!_listening) {
+            _listening = true;
+            _events.add(const VoiceEvent(type: 'listening'));
+          }
+          return;
+        }
+
+        if ((normalized == 'done' || normalized == 'notlistening') &&
+            _listening) {
           _listening = false;
           _events.add(const VoiceEvent(type: 'stopped'));
         }
@@ -105,7 +115,7 @@ class VoiceService {
     if (!ready) return false;
 
     await stopSpeaking();
-    await _speech.stop();
+    await _speech.cancel();
 
     final localeId = await _resolveSpeechLocale();
     final started = await _speech.listen(
@@ -120,13 +130,13 @@ class VoiceService {
           ),
         );
       },
-      listenFor: const Duration(minutes: 2),
-      pauseFor: const Duration(seconds: 4),
+      listenFor: const Duration(seconds: 45),
+      pauseFor: const Duration(seconds: 2),
       localeId: localeId,
       listenOptions: SpeechListenOptions(
-        listenMode: ListenMode.dictation,
+        listenMode: ListenMode.confirmation,
         partialResults: true,
-        cancelOnError: false,
+        cancelOnError: true,
       ),
     );
 
@@ -167,7 +177,7 @@ class VoiceService {
 
   Future<void> _prepareTts() async {
     await _tts.awaitSpeakCompletion(true);
-    await _tts.setSpeechRate(0.48);
+    await _tts.setSpeechRate(0.46);
     await _tts.setPitch(1.0);
     await _tts.setVolume(1.0);
 

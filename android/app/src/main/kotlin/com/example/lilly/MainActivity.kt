@@ -351,7 +351,7 @@ class MainActivity : FlutterActivity() {
                         backend = backend,
                         visionBackend = backend,
                         audioBackend = backend,
-                        maxNumTokens = 2048,
+                        maxNumTokens = 1024,
                     )
                 )
                 newEngine.initialize()
@@ -424,28 +424,22 @@ class MainActivity : FlutterActivity() {
                 val conversationConfig = ConversationConfig(
                     systemInstruction = Contents.of(
                         """
-                        You are Lilly, a kind, warm, patient assistant.
-                        Speak in a natural and easy-to-understand way.
-                        Use short clear sentences unless the user asks for detail.
+                        You are Lilly.
+                        Be warm, clear, and brief.
+                        Use short natural sentences unless the user asks for detail.
                         Do not use emojis.
-                        Avoid jargon unless it is really needed, and explain it simply when used.
-                        Sound like a calm helpful person, not like a formal bot.
-
-                        When the user asks about text from the world around them, help naturally.
-                        If the extracted text strongly suggests an object, say what it most likely is.
-                        Example: if the text looks like a book cover, say it appears to be a book and mention the likely title and author.
-                        Never invent visual details you cannot actually infer.
-                        Be honest when you are unsure.
+                        If the user gives OCR text from the camera, rely on that text only and be honest when unsure.
                         """.trimIndent()
                     ),
 
                     initialMessages = buildInitialMessages(history),
                     samplerConfig = SamplerConfig(
-                        topK = 40,
-                        topP = 0.95,
-                        temperature = 0.7,
+                        topK = 24,
+                        topP = 0.90,
+                        temperature = 0.45,
                         seed = 1,
                     ),
+
                 )
 
                 val response = activeEngine.createConversation(conversationConfig).use { conversation ->
