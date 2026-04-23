@@ -118,7 +118,7 @@ class LillyTriggerService : Service() {
     }
 
     private fun handleWakeWordDetected() {
-        updateStatus("Wake word heard. Tap notification to start voice chat.")
+        updateStatus("Wake word heard. Tap to start voice chat.")
         showWakeAlert()
     }
 
@@ -145,7 +145,7 @@ class LillyTriggerService : Service() {
             .setContentIntent(buildVoiceChatPendingIntent())
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .addAction(0, "Start Voice Chat", buildVoiceChatPendingIntent())
             .build()
     }
@@ -234,7 +234,10 @@ class LillyTriggerService : Service() {
             ALERT_CHANNEL_ID,
             ALERT_CHANNEL_NAME,
             NotificationManager.IMPORTANCE_HIGH,
-        )
+        ).apply {
+            enableVibration(true)
+            description = "Wake word detected alerts"
+        }
 
         manager.createNotificationChannel(statusChannel)
         manager.createNotificationChannel(alertChannel)

@@ -42,6 +42,9 @@ class VoiceService {
 
   bool _speechReady = false;
   bool _listening = false;
+  String _lastRecognizedText = '';
+  bool _finalAlreadyEmitted = false;
+  List<LocaleName> _availableSpeechLocales = const [];
 
   Stream<VoiceEvent> get events => _events.stream;
 
@@ -76,25 +79,31 @@ class VoiceService {
           return;
         }
 
-        if ((normalized == 'done' || normalized == 'notlistening') &&
-            _listening) {
+        if (normalized == 'done' || normalized == 'notlistening') {
+          final wasListening = _listening;
           _listening = false;
-          _events.add(const VoiceEvent(type: 'stopped'));
+
+          if (wasListening) {
+            _emitBufferedFinalIfNeeded();
+            _events.add(const VoiceEvent(type: 'stopped'));
+          }
         }
       },
       onError: (error) {
         final message = error.errorMsg.toLowerCase();
-
-        if (message.contains('timeout') ||
+        final isSoftStop = message.contains('timeout') ||
             message.contains('no match') ||
             message.contains('error_no_match') ||
-            message.contains('error_speech_timeout')) {
-          _listening = false;
+            message.contains('error_speech_timeout');
+
+        _listening = false;
+
+        if (isSoftStop) {
+          _emitBufferedFinalIfNeeded();
           _events.add(const VoiceEvent(type: 'stopped'));
           return;
         }
 
-        _listening = false;
         _events.add(
           VoiceEvent(
             type: 'error',
@@ -107,6 +116,9 @@ class VoiceService {
     );
 
     if (_speechReady) {
+      try {
+        _availableSpeechLocales = await _speech.locales();
+      } catch (_) {}
       _events.add(const VoiceEvent(type: 'ready'));
       return true;
     }
@@ -125,6 +137,9 @@ class VoiceService {
     final ready = _speechReady || await initializeVoiceModel();
     if (!ready) return false;
 
+    _lastRecognizedText = '';
+    _finalAlreadyEmitted = false;
+
     await stopSpeaking();
     await _speech.cancel();
 
@@ -133,6 +148,12 @@ class VoiceService {
       onResult: (result) {
         final text = result.recognizedWords.trim();
         if (text.isEmpty) return;
+
+        _lastRecognizedText = text;
+
+        if (result.finalResult) {
+          _finalAlreadyEmitted = true;
+        }
 
         _events.add(
           VoiceEvent(
@@ -186,6 +207,19 @@ class VoiceService {
     await _tts.stop();
   }
 
+  void _emitBufferedFinalIfNeeded() {
+    final buffered = _lastRecognizedText.trim();
+    if (buffered.isEmpty || _finalAlreadyEmitted) return;
+
+    _finalAlreadyEmitted = true;
+    _events.add(
+      VoiceEvent(
+        type: 'final',
+        text: buffered,
+      ),
+    );
+  }
+
   Future<void> _prepareTts() async {
     await _tts.awaitSpeakCompletion(true);
     await _tts.setSpeechRate(0.46);
@@ -201,9 +235,63 @@ class VoiceService {
   }
 
   Future<String> _resolveSpeechLocale() async {
+    if (_availableSpeechLocales.isEmpty) {
+      try {
+        _availableSpeechLocales = await _speech.locales();
+      } catch (_) {}
+    }
+
     final selectedCodes = await _settingsService.getVoiceLanguageCodes();
-    if (selectedCodes.isEmpty) return VoiceLanguage.english.speechLocaleId;
-    return VoiceLanguage.fromCode(selectedCodes.first).speechLocaleId;
+    final selected = VoiceLanguage.fromCode(
+      selectedCodes.isEmpty ? VoiceLanguage.english.code : selectedCodes.first,
+    );
+
+    for (final candidate in _preferredSpeechLocales(selected.code)) {
+      final matched = _matchSpeechLocale(candidate);
+      if (matched != null) {
+        return matched;
+      }
+    }
+
+    for (final locale in _availableSpeechLocales) {
+      final normalized = locale.localeId.toLowerCase();
+      if (normalized.startsWith('${selected.code.toLowerCase()}_') ||
+          normalized.startsWith('${selected.code.toLowerCase()}-')) {
+        return locale.localeId;
+      }
+    }
+
+    return selected.speechLocaleId;
+  }
+
+  List<String> _preferredSpeechLocales(String code) {
+    switch (code) {
+      case 'en':
+        return const ['en_IN', 'en_US', 'en_GB'];
+      case 'hi':
+        return const ['hi_IN'];
+      case 'es':
+        return const ['es_ES', 'es_US'];
+      case 'fr':
+        return const ['fr_FR'];
+      case 'de':
+        return const ['de_DE'];
+      case 'pt':
+        return const ['pt_PT', 'pt_BR'];
+      case 'ru':
+        return const ['ru_RU'];
+      default:
+        return const ['en_IN', 'en_US', 'en_GB'];
+    }
+  }
+
+  String? _matchSpeechLocale(String candidate) {
+    for (final locale in _availableSpeechLocales) {
+      if (locale.localeId.toLowerCase() == candidate.toLowerCase()) {
+        return locale.localeId;
+      }
+    }
+    return null;
   }
 
   Future<String> _resolveTtsLocale() async {
