@@ -40,6 +40,20 @@ class TriggerService {
     return result?['success'] == true;
   }
 
+  Future<bool> pauseForVoiceChat() async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'pauseTriggerForVoiceChat',
+    );
+    return result?['success'] == true;
+  }
+
+  Future<bool> resumeAfterVoiceChat() async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'resumeTriggerAfterVoiceChat',
+    );
+    return result?['success'] == true;
+  }
+
   Future<bool> isTriggerRunning() async {
     final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
       'getTriggerStatus',

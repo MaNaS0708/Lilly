@@ -29,7 +29,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final TextEditingController _textController = TextEditingController();
   final SettingsService _settingsService = SettingsService();
   final TriggerService _triggerService = TriggerService();
@@ -46,15 +46,24 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isVoicePreparing = false;
   bool _isVoiceSpeaking = false;
   bool _voiceConversationMode = false;
+  bool _pausedTriggerForVoiceChat = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _modelController = ModelController();
     _chatController = ChatController(modelController: _modelController);
     _conversationListController = ConversationListController();
     _listenToVoiceEvents();
     _bootstrap();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_consumePendingTriggerAction());
+    }
   }
 
   Future<void> _bootstrap() async {
@@ -87,6 +96,39 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _vibrateResponseDone() async {
     await HapticFeedback.lightImpact();
+  }
+
+  Future<void> _pauseWakeWordForVoiceChat() async {
+    if (_pausedTriggerForVoiceChat) return;
+
+    final running = await _triggerService.isTriggerRunning();
+    if (!running) return;
+
+    final paused = await _triggerService.pauseForVoiceChat();
+    if (paused) {
+      _pausedTriggerForVoiceChat = true;
+    }
+  }
+
+  Future<void> _resumeWakeWordAfterVoiceChat() async {
+    if (!_pausedTriggerForVoiceChat) return;
+
+    final resumed = await _triggerService.resumeAfterVoiceChat();
+    if (resumed) {
+      _pausedTriggerForVoiceChat = false;
+    }
+  }
+
+  Future<void> _restartVoiceConversationLoop() async {
+    if (!_voiceConversationMode || !mounted) return;
+
+    final restarted = await _startVoiceChat();
+    if (!restarted && mounted) {
+      setState(() {
+        _voiceConversationMode = false;
+      });
+      await _resumeWakeWordAfterVoiceChat();
+    }
   }
 
   void _listenToVoiceEvents() {
@@ -159,17 +201,20 @@ class _ChatScreenState extends State<ChatScreen> {
               !_isVoicePreparing &&
               !_modelController.isGenerating) {
             await Future<void>.delayed(const Duration(milliseconds: 250));
-            if (mounted && _voiceConversationMode) {
-              await _startVoiceChat();
-            }
+            await _restartVoiceConversationLoop();
           }
           break;
         case 'error':
+          final shouldResumeTrigger = _voiceConversationMode;
           setState(() {
             _isVoiceListening = false;
             _isVoicePreparing = false;
             _isVoiceSpeaking = false;
+            _voiceConversationMode = false;
           });
+          if (shouldResumeTrigger) {
+            await _resumeWakeWordAfterVoiceChat();
+          }
           _chatController.showError(event.message ?? 'Voice capture failed.');
           break;
       }
@@ -208,9 +253,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
 
       if (image == null) {
-        if (_voiceConversationMode && mounted) {
-          await _startVoiceChat();
-        }
+        await _restartVoiceConversationLoop();
         return;
       }
 
@@ -222,9 +265,7 @@ class _ChatScreenState extends State<ChatScreen> {
       await _sendMessage(speakReply: _voiceConversationMode);
     } catch (e) {
       _chatController.showError(e.toString());
-      if (_voiceConversationMode && mounted) {
-        await _startVoiceChat();
-      }
+      await _restartVoiceConversationLoop();
     }
   }
 
@@ -252,16 +293,24 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _startVoiceConversation() async {
-    if (!_voiceConversationMode) {
+    await _pauseWakeWordForVoiceChat();
+
+    if (!mounted) return;
+    setState(() {
+      _voiceConversationMode = true;
+    });
+
+    final started = await _startVoiceChat();
+    if (!started && mounted) {
       setState(() {
-        _voiceConversationMode = true;
+        _voiceConversationMode = false;
       });
+      await _resumeWakeWordAfterVoiceChat();
     }
-    await _startVoiceChat();
   }
 
-  Future<void> _startVoiceChat() async {
-    if (_isVoicePreparing || _isVoiceListening) return;
+  Future<bool> _startVoiceChat() async {
+    if (_isVoicePreparing || _isVoiceListening) return true;
 
     setState(() {
       _isVoicePreparing = true;
@@ -269,22 +318,27 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final initialized = await _voiceService.initializeVoiceModel();
     if (!initialized) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _isVoicePreparing = false;
       });
       _chatController.showError('Voice chat is not ready on this device yet.');
-      return;
+      return false;
     }
 
     final started = await _voiceService.startListening();
-    if (!started && mounted) {
+    if (!mounted) return started;
+
+    if (!started) {
       setState(() {
         _isVoicePreparing = false;
         _isVoiceListening = false;
       });
       _chatController.showError('Could not start speech recognition.');
+      return false;
     }
+
+    return true;
   }
 
   Future<void> _stopVoiceChat() async {
@@ -297,124 +351,12 @@ class _ChatScreenState extends State<ChatScreen> {
       _isVoiceSpeaking = false;
       _voiceConversationMode = false;
     });
-  }
-
-  String _voicePanelLabel() {
-    if (_isVoicePreparing) return 'Getting Lilly ready...';
-    if (_isVoiceListening) return 'Listening...';
-    if (_isVoiceSpeaking) return 'Lilly is replying...';
-    if (_voiceConversationMode) return 'Voice chat ready';
-    return 'Voice chat';
-  }
-
-  Widget _buildVoiceAssistantPanel() {
-    final showPanel = _voiceConversationMode ||
-        _isVoicePreparing ||
-        _isVoiceListening ||
-        _isVoiceSpeaking;
-
-    if (!showPanel) {
-      return const SizedBox.shrink();
-    }
-
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: SafeArea(
-        top: false,
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.97),
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x22000000),
-                blurRadius: 24,
-                offset: Offset(0, -4),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 44,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD7C4CC),
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Lilly',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF473241),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _voicePanelLabel(),
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 15,
-                  color: Color(0xFF6B5A67),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                constraints: const BoxConstraints(minHeight: 72),
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF9F1F4),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Text(
-                  _textController.text.trim().isEmpty
-                      ? 'Speak now...'
-                      : _textController.text.trim(),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: Color(0xFF473241),
-                    height: 1.35,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _stopVoiceChat,
-                      icon: const Icon(Icons.close_rounded),
-                      label: const Text('Close'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: (_isVoiceListening || _isVoicePreparing)
-                          ? null
-                          : _startVoiceChat,
-                      icon: const Icon(Icons.mic_rounded),
-                      label: const Text('Speak'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    await _resumeWakeWordAfterVoiceChat();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _voiceSubscription?.cancel();
     _textController.dispose();
     _chatController.dispose();
@@ -422,6 +364,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _modelController.shutdown();
     _modelController.dispose();
     _voiceService.dispose();
+    if (_pausedTriggerForVoiceChat) {
+      unawaited(_resumeWakeWordAfterVoiceChat());
+    }
     super.dispose();
   }
 
@@ -702,35 +647,29 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ],
             ),
-            body: Stack(
+            body: Column(
               children: [
-                Column(
-                  children: [
-                    if (_chatController.errorMessage != null)
-                      ErrorMessageBanner(
-                        message: _chatController.errorMessage!,
-                        onDismiss: _chatController.dismissError,
-                      ),
-                    Expanded(
-                      child: MessageList(
-                        messages: _chatController.messages,
-                        scrollController: _chatController.scrollController,
-                        isLoading: isBusy,
-                        loadingLabel: _loadingLabel(),
-                      ),
-                    ),
-                    MessageInputBar(
-                      controller: _textController,
-                      selectedImage: _chatController.selectedImage,
-                      isSending: isBusy,
-                      onPickImage: _showImageSourceSheet,
-                      onRemoveImage: _chatController.removeSelectedImage,
-                      onSend: () =>
-                          _sendMessage(speakReply: _voiceConversationMode),
-                    ),
-                  ],
+                if (_chatController.errorMessage != null)
+                  ErrorMessageBanner(
+                    message: _chatController.errorMessage!,
+                    onDismiss: _chatController.dismissError,
+                  ),
+                Expanded(
+                  child: MessageList(
+                    messages: _chatController.messages,
+                    scrollController: _chatController.scrollController,
+                    isLoading: isBusy,
+                    loadingLabel: _loadingLabel(),
+                  ),
                 ),
-                _buildVoiceAssistantPanel(),
+                MessageInputBar(
+                  controller: _textController,
+                  selectedImage: _chatController.selectedImage,
+                  isSending: isBusy,
+                  onPickImage: _showImageSourceSheet,
+                  onRemoveImage: _chatController.removeSelectedImage,
+                  onSend: () => _sendMessage(speakReply: _voiceConversationMode),
+                ),
               ],
             ),
           ),

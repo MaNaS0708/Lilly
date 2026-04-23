@@ -141,50 +141,52 @@ class VoiceService {
     _finalAlreadyEmitted = false;
 
     await stopSpeaking();
-    await _speech.cancel();
 
-    final localeId = await _resolveSpeechLocale();
-    final started = await _speech.listen(
-      onResult: (result) {
-        final text = result.recognizedWords.trim();
-        if (text.isEmpty) return;
+    try {
+      await _speech.cancel();
 
-        _lastRecognizedText = text;
+      final localeId = await _resolveSpeechLocale();
+      await _speech.listen(
+        onResult: (result) {
+          final text = result.recognizedWords.trim();
+          if (text.isEmpty) return;
 
-        if (result.finalResult) {
-          _finalAlreadyEmitted = true;
-        }
+          _lastRecognizedText = text;
 
-        _events.add(
-          VoiceEvent(
-            type: result.finalResult ? 'final' : 'partial',
-            text: text,
-          ),
-        );
-      },
-      listenFor: const Duration(minutes: 2),
-      pauseFor: const Duration(seconds: 8),
-      localeId: localeId,
-      listenOptions: SpeechListenOptions(
-        listenMode: ListenMode.dictation,
-        partialResults: true,
-        cancelOnError: false,
-      ),
-    );
+          if (result.finalResult) {
+            _finalAlreadyEmitted = true;
+          }
 
-    if (started) {
+          _events.add(
+            VoiceEvent(
+              type: result.finalResult ? 'final' : 'partial',
+              text: text,
+            ),
+          );
+        },
+        listenFor: const Duration(minutes: 2),
+        pauseFor: const Duration(seconds: 8),
+        localeId: localeId,
+        listenOptions: SpeechListenOptions(
+          listenMode: ListenMode.dictation,
+          partialResults: true,
+          cancelOnError: false,
+        ),
+      );
+
       _listening = true;
       _events.add(const VoiceEvent(type: 'listening'));
       return true;
+    } catch (e) {
+      _listening = false;
+      _events.add(
+        VoiceEvent(
+          type: 'error',
+          message: e.toString().replaceFirst('Exception: ', ''),
+        ),
+      );
+      return false;
     }
-
-    _events.add(
-      const VoiceEvent(
-        type: 'error',
-        message: 'Could not start speech recognition.',
-      ),
-    );
-    return false;
   }
 
   Future<bool> stopListening() async {

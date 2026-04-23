@@ -9,7 +9,9 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlin.concurrent.thread
@@ -29,6 +31,8 @@ class LillyTriggerService : Service() {
         @Volatile
         var isRunning: Boolean = false
     }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
     private var currentStatusText: String = "Preparing wake word..."
@@ -118,18 +122,56 @@ class LillyTriggerService : Service() {
     }
 
     private fun handleWakeWordDetected() {
-        updateStatus("Wake word heard. Tap to start voice chat.")
-        showWakeAlert()
+        updateStatus("Opening voice chat...")
+
+        mainHandler.post {
+            try {
+                val intent = Intent(this, MainActivity::class.java).apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                    )
+                    putExtra("open_voice_chat", true)
+                }
+                startActivity(intent)
+            } catch (e: Exception) {
+                Log.w(TAG, "Direct voice chat launch was blocked, keeping notification fallback.", e)
+            }
+
+            showWakeAlert()
+        }
+
+        mainHandler.postDelayed(
+            {
+                if (serviceActive) {
+                    updateStatus("Listening for \"${WakeWordConstants.wakePhraseLabel}\"")
+                }
+            },
+            2500L,
+        )
     }
 
     private fun buildStatusNotification(contentText: String): Notification {
+        val voicePendingIntent = buildVoiceChatPendingIntent()
+        val openPendingIntent = buildOpenAppPendingIntent()
+
+        val contentIntent = if (
+            contentText.contains("voice chat", ignoreCase = true) ||
+            contentText.contains("wake word heard", ignoreCase = true)
+        ) {
+            voicePendingIntent
+        } else {
+            openPendingIntent
+        }
+
         return NotificationCompat.Builder(this, STATUS_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Lilly assistant standby")
             .setContentText(contentText)
-            .setContentIntent(buildOpenAppPendingIntent())
-            .addAction(0, "Open Lilly", buildOpenAppPendingIntent())
-            .addAction(0, "Start Voice Chat", buildVoiceChatPendingIntent())
+            .setContentIntent(contentIntent)
+            .addAction(0, "Open Lilly", openPendingIntent)
+            .addAction(0, "Start Voice Chat", voicePendingIntent)
             .setOngoing(true)
             .setSilent(true)
             .setOnlyAlertOnce(false)

@@ -104,93 +104,122 @@ class MainActivity : FlutterActivity() {
             }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, triggerChannelName)
-        .setMethodCallHandler { call, result ->
-            val preferences = TriggerPreferences(this)
+            .setMethodCallHandler { call, result ->
+                val preferences = TriggerPreferences(this)
 
-            when (call.method) {
-                "getTriggerCapabilities" -> {
-                    val wakeWordReady = WakeWordConstants.isWakeWordReady(filesDir)
+                when (call.method) {
+                    "getTriggerCapabilities" -> {
+                        val wakeWordReady = WakeWordConstants.isWakeWordReady(filesDir)
 
-                    result.success(
-                        mapOf(
-                            "platformSupported" to true,
-                            "backgroundServiceSupported" to true,
-                            "wakeWordReady" to wakeWordReady,
-                            "notificationPermissionRecommended" to (Build.VERSION.SDK_INT >= 33),
-                            "microphonePermissionRecommended" to true,
-                            "isRunning" to LillyTriggerService.isRunning,
-                            "autostartEnabled" to preferences.isAutostartEnabled(),
-                            "notes" to if (wakeWordReady) {
-                                "Say \"Hey Lilly\" to open voice chat. Lilly listens from the foreground trigger service and can still be opened from the notification."
-                            } else {
-                                "Say \"Hey Lilly\" to open voice chat. The first time you enable the trigger, Lilly downloads the wake-word model automatically and then starts listening."
-                            },
-                        )
-                    )
-                }
-
-                "getTriggerStatus" -> {
-                    result.success(
-                        mapOf(
-                            "isRunning" to LillyTriggerService.isRunning,
-                        )
-                    )
-                }
-
-                "setTriggerAutostart" -> {
-                    val enabled = call.argument<Boolean>("enabled") ?: false
-                    preferences.setAutostartEnabled(enabled)
-                    result.success(
-                        mapOf(
-                            "success" to true,
-                            "enabled" to enabled,
-                        )
-                    )
-                }
-
-                "consumePendingLaunchAction" -> {
-                    val action = pendingLaunchAction
-                    pendingLaunchAction = null
-                    result.success(mapOf("action" to action))
-                }
-
-                "startTriggerService" -> {
-                    try {
-                        preferences.setAutostartEnabled(true)
-                        val intent = Intent(this, LillyTriggerService::class.java)
-                        ContextCompat.startForegroundService(this, intent)
-                        result.success(mapOf("success" to true))
-                    } catch (e: Exception) {
                         result.success(
                             mapOf(
-                                "success" to false,
-                                "errorMessage" to (e.message ?: "Failed to start trigger service."),
+                                "platformSupported" to true,
+                                "backgroundServiceSupported" to true,
+                                "wakeWordReady" to wakeWordReady,
+                                "notificationPermissionRecommended" to (Build.VERSION.SDK_INT >= 33),
+                                "microphonePermissionRecommended" to true,
+                                "isRunning" to LillyTriggerService.isRunning,
+                                "autostartEnabled" to preferences.isAutostartEnabled(),
+                                "notes" to if (wakeWordReady) {
+                                    "Say \"Hey Lilly\" to open voice chat. Lilly listens from the foreground trigger service and can still be opened from the notification."
+                                } else {
+                                    "Say \"Hey Lilly\" to open voice chat. The first time you enable the trigger, Lilly downloads the wake-word model automatically and then starts listening."
+                                },
                             )
                         )
                     }
-                }
 
-                "stopTriggerService" -> {
-                    try {
-                        preferences.setAutostartEnabled(false)
-                        val intent = Intent(this, LillyTriggerService::class.java)
-                        stopService(intent)
-                        result.success(mapOf("success" to true))
-                    } catch (e: Exception) {
+                    "getTriggerStatus" -> {
                         result.success(
                             mapOf(
-                                "success" to false,
-                                "errorMessage" to (e.message ?: "Failed to stop trigger service."),
+                                "isRunning" to LillyTriggerService.isRunning,
                             )
                         )
                     }
-                }
 
-                else -> result.notImplemented()
+                    "setTriggerAutostart" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        preferences.setAutostartEnabled(enabled)
+                        result.success(
+                            mapOf(
+                                "success" to true,
+                                "enabled" to enabled,
+                            )
+                        )
+                    }
+
+                    "consumePendingLaunchAction" -> {
+                        val action = pendingLaunchAction
+                        pendingLaunchAction = null
+                        result.success(mapOf("action" to action))
+                    }
+
+                    "startTriggerService" -> {
+                        try {
+                            preferences.setAutostartEnabled(true)
+                            val intent = Intent(this, LillyTriggerService::class.java)
+                            ContextCompat.startForegroundService(this, intent)
+                            result.success(mapOf("success" to true))
+                        } catch (e: Exception) {
+                            result.success(
+                                mapOf(
+                                    "success" to false,
+                                    "errorMessage" to (e.message ?: "Failed to start trigger service."),
+                                )
+                            )
+                        }
+                    }
+
+                    "stopTriggerService" -> {
+                        try {
+                            preferences.setAutostartEnabled(false)
+                            val intent = Intent(this, LillyTriggerService::class.java)
+                            stopService(intent)
+                            result.success(mapOf("success" to true))
+                        } catch (e: Exception) {
+                            result.success(
+                                mapOf(
+                                    "success" to false,
+                                    "errorMessage" to (e.message ?: "Failed to stop trigger service."),
+                                )
+                            )
+                        }
+                    }
+
+                    "pauseTriggerForVoiceChat" -> {
+                        try {
+                            val intent = Intent(this, LillyTriggerService::class.java)
+                            stopService(intent)
+                            result.success(mapOf("success" to true))
+                        } catch (e: Exception) {
+                            result.success(
+                                mapOf(
+                                    "success" to false,
+                                    "errorMessage" to (e.message ?: "Failed to pause trigger service."),
+                                )
+                            )
+                        }
+                    }
+
+                    "resumeTriggerAfterVoiceChat" -> {
+                        try {
+                            val intent = Intent(this, LillyTriggerService::class.java)
+                            ContextCompat.startForegroundService(this, intent)
+                            result.success(mapOf("success" to true))
+                        } catch (e: Exception) {
+                            result.success(
+                                mapOf(
+                                    "success" to false,
+                                    "errorMessage" to (e.message ?: "Failed to resume trigger service."),
+                                )
+                            )
+                        }
+                    }
+
+                    else -> result.notImplemented()
+                }
             }
-        }
     }
-
 
     private fun updatePendingLaunchAction(intent: Intent?) {
         pendingLaunchAction = when {
@@ -335,7 +364,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-        private fun createEngine(path: String): Pair<Engine, String> {
+    private fun createEngine(path: String): Pair<Engine, String> {
         val errors = mutableListOf<String>()
 
         val attempts = listOf(
@@ -365,7 +394,6 @@ class MainActivity : FlutterActivity() {
             "Unable to initialize LiteRT-LM backend. ${errors.joinToString(" | ")}"
         )
     }
-
 
     private fun generateResponse(
         prompt: String,
@@ -431,7 +459,6 @@ class MainActivity : FlutterActivity() {
                         If the user gives OCR text from the camera, rely on that text only and be honest when unsure.
                         """.trimIndent()
                     ),
-
                     initialMessages = buildInitialMessages(history),
                     samplerConfig = SamplerConfig(
                         topK = 24,
@@ -439,7 +466,6 @@ class MainActivity : FlutterActivity() {
                         temperature = 0.45,
                         seed = 1,
                     ),
-
                 )
 
                 val response = activeEngine.createConversation(conversationConfig).use { conversation ->
