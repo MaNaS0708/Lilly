@@ -14,7 +14,7 @@ class EmptyChatState extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(28),
               child: Image.asset(
-                'assets/images/lilly_logo.jpg',
+                'assets/images/lilly_logo.png',
                 width: 120,
                 height: 120,
                 fit: BoxFit.cover,

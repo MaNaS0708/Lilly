@@ -104,86 +104,93 @@ class MainActivity : FlutterActivity() {
             }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, triggerChannelName)
-            .setMethodCallHandler { call, result ->
-                val preferences = TriggerPreferences(this)
+        .setMethodCallHandler { call, result ->
+            val preferences = TriggerPreferences(this)
 
-                when (call.method) {
-                    "getTriggerCapabilities" -> {
-                        result.success(
-                            mapOf(
-                                "platformSupported" to true,
-                                "backgroundServiceSupported" to true,
-                                "wakeWordReady" to false,
-                                "notificationPermissionRecommended" to (Build.VERSION.SDK_INT >= 33),
-                                "microphonePermissionRecommended" to true,
-                                "isRunning" to LillyTriggerService.isRunning,
-                                "autostartEnabled" to preferences.isAutostartEnabled(),
-                                "notes" to "The reliable trigger is the persistent notification. Voice chat uses the phone speech engine plus spoken replies, and Gemma stays on-demand.",
-                            )
+            when (call.method) {
+                "getTriggerCapabilities" -> {
+                    val wakeWordReady = WakeWordConstants.isWakeWordReady(filesDir)
+
+                    result.success(
+                        mapOf(
+                            "platformSupported" to true,
+                            "backgroundServiceSupported" to true,
+                            "wakeWordReady" to wakeWordReady,
+                            "notificationPermissionRecommended" to (Build.VERSION.SDK_INT >= 33),
+                            "microphonePermissionRecommended" to true,
+                            "isRunning" to LillyTriggerService.isRunning,
+                            "autostartEnabled" to preferences.isAutostartEnabled(),
+                            "notes" to if (wakeWordReady) {
+                                "Say \"Hey Lilly\" to open voice chat. Lilly listens from the foreground trigger service and can still be opened from the notification."
+                            } else {
+                                "Say \"Hey Lilly\" to open voice chat. The first time you enable the trigger, Lilly downloads the wake-word model automatically and then starts listening."
+                            },
                         )
-                    }
-
-                    "getTriggerStatus" -> {
-                        result.success(
-                            mapOf(
-                                "isRunning" to LillyTriggerService.isRunning,
-                            )
-                        )
-                    }
-
-                    "setTriggerAutostart" -> {
-                        val enabled = call.argument<Boolean>("enabled") ?: false
-                        preferences.setAutostartEnabled(enabled)
-                        result.success(
-                            mapOf(
-                                "success" to true,
-                                "enabled" to enabled,
-                            )
-                        )
-                    }
-
-                    "consumePendingLaunchAction" -> {
-                        val action = pendingLaunchAction
-                        pendingLaunchAction = null
-                        result.success(mapOf("action" to action))
-                    }
-
-                    "startTriggerService" -> {
-                        try {
-                            preferences.setAutostartEnabled(true)
-                            val intent = Intent(this, LillyTriggerService::class.java)
-                            ContextCompat.startForegroundService(this, intent)
-                            result.success(mapOf("success" to true))
-                        } catch (e: Exception) {
-                            result.success(
-                                mapOf(
-                                    "success" to false,
-                                    "errorMessage" to (e.message ?: "Failed to start trigger service."),
-                                )
-                            )
-                        }
-                    }
-
-                    "stopTriggerService" -> {
-                        try {
-                            preferences.setAutostartEnabled(false)
-                            val intent = Intent(this, LillyTriggerService::class.java)
-                            stopService(intent)
-                            result.success(mapOf("success" to true))
-                        } catch (e: Exception) {
-                            result.success(
-                                mapOf(
-                                    "success" to false,
-                                    "errorMessage" to (e.message ?: "Failed to stop trigger service."),
-                                )
-                            )
-                        }
-                    }
-
-                    else -> result.notImplemented()
+                    )
                 }
+
+                "getTriggerStatus" -> {
+                    result.success(
+                        mapOf(
+                            "isRunning" to LillyTriggerService.isRunning,
+                        )
+                    )
+                }
+
+                "setTriggerAutostart" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    preferences.setAutostartEnabled(enabled)
+                    result.success(
+                        mapOf(
+                            "success" to true,
+                            "enabled" to enabled,
+                        )
+                    )
+                }
+
+                "consumePendingLaunchAction" -> {
+                    val action = pendingLaunchAction
+                    pendingLaunchAction = null
+                    result.success(mapOf("action" to action))
+                }
+
+                "startTriggerService" -> {
+                    try {
+                        preferences.setAutostartEnabled(true)
+                        val intent = Intent(this, LillyTriggerService::class.java)
+                        ContextCompat.startForegroundService(this, intent)
+                        result.success(mapOf("success" to true))
+                    } catch (e: Exception) {
+                        result.success(
+                            mapOf(
+                                "success" to false,
+                                "errorMessage" to (e.message ?: "Failed to start trigger service."),
+                            )
+                        )
+                    }
+                }
+
+                "stopTriggerService" -> {
+                    try {
+                        preferences.setAutostartEnabled(false)
+                        val intent = Intent(this, LillyTriggerService::class.java)
+                        stopService(intent)
+                        result.success(mapOf("success" to true))
+                    } catch (e: Exception) {
+                        result.success(
+                            mapOf(
+                                "success" to false,
+                                "errorMessage" to (e.message ?: "Failed to stop trigger service."),
+                            )
+                        )
+                    }
+                }
+
+                else -> result.notImplemented()
             }
+        }
     }
+
 
     private fun updatePendingLaunchAction(intent: Intent?) {
         pendingLaunchAction = when {

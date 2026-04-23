@@ -110,7 +110,7 @@ class _ConversationDrawerState extends State<ConversationDrawer> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(16),
                     child: Image.asset(
-                      'assets/images/lilly_logo.jpg',
+                      'assets/images/lilly_logo.png',
                       width: 52,
                       height: 52,
                       fit: BoxFit.cover,

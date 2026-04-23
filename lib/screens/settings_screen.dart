@@ -446,7 +446,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Keep trigger active'),
                       subtitle: const Text(
-                        'Runs a lightweight foreground service even when the app is closed.',
+                        'Runs a foreground service so Lilly can listen for “Hey Lilly” even when the app is closed.',
                       ),
                       value: _triggerEnabled,
                       onChanged: _triggerBusy ? null : _setTriggerEnabled,
@@ -464,7 +464,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     _InfoRow(
                       title: 'Trigger type',
-                      value: 'Notification action',
+                      value: 'Wake word + notification',
                     ),
                     const SizedBox(height: 8),
                     if (trigger != null && trigger.notes.isNotEmpty)
@@ -485,7 +485,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Use the persistent notification actions to open Lilly or start voice chat.',
+                      'Keep the trigger active, then say “Hey Lilly” to open voice chat. On the first run, Lilly downloads the wake-word model automatically.',
                       style: TextStyle(
                         color: Color(0xFF4B5563),
                         height: 1.4,

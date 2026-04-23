@@ -39,5 +39,5 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: assets/images/lilly_logo.jpg
+  image_path: assets/images/lilly_logo.png
   min_sdk_android: 24
