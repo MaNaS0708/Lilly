@@ -165,7 +165,7 @@ class VoiceService {
           );
         },
         listenFor: const Duration(minutes: 2),
-        pauseFor: const Duration(seconds: 8),
+        pauseFor: const Duration(seconds: 6),
         localeId: localeId,
         listenOptions: SpeechListenOptions(
           listenMode: ListenMode.dictation,
@@ -243,10 +243,8 @@ class VoiceService {
       } catch (_) {}
     }
 
-    final selectedCodes = await _settingsService.getVoiceLanguageCodes();
-    final selected = VoiceLanguage.fromCode(
-      selectedCodes.isEmpty ? VoiceLanguage.english.code : selectedCodes.first,
-    );
+    final selectedCode = await _settingsService.getPrimaryVoiceLanguageCode();
+    final selected = VoiceLanguage.fromCode(selectedCode);
 
     for (final candidate in _preferredSpeechLocales(selected.code)) {
       final matched = _matchSpeechLocale(candidate);
@@ -269,7 +267,7 @@ class VoiceService {
   List<String> _preferredSpeechLocales(String code) {
     switch (code) {
       case 'en':
-        return const ['en_IN', 'en_US', 'en_GB'];
+        return const ['en_US', 'en_IN', 'en_GB'];
       case 'hi':
         return const ['hi_IN'];
       case 'es':
@@ -283,7 +281,7 @@ class VoiceService {
       case 'ru':
         return const ['ru_RU'];
       default:
-        return const ['en_IN', 'en_US', 'en_GB'];
+        return const ['en_US', 'en_IN', 'en_GB'];
     }
   }
 
@@ -297,9 +295,8 @@ class VoiceService {
   }
 
   Future<String> _resolveTtsLocale() async {
-    final selectedCodes = await _settingsService.getVoiceLanguageCodes();
-    if (selectedCodes.isEmpty) return VoiceLanguage.english.speechLocaleId;
-    return VoiceLanguage.fromCode(selectedCodes.first).speechLocaleId;
+    final selectedCode = await _settingsService.getPrimaryVoiceLanguageCode();
+    return VoiceLanguage.fromCode(selectedCode).speechLocaleId;
   }
 
   void dispose() {

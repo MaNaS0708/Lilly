@@ -32,7 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loading = true;
   bool _triggerBusy = false;
   bool _triggerEnabled = false;
-  final Set<String> _voiceLanguageCodes = <String>{};
+  String _voiceLanguageCode = VoiceLanguage.english.code;
 
   ModelFileInfo? _modelInfo;
   TriggerCapabilities? _triggerCapabilities;
@@ -50,7 +50,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final enableImages = await _settingsService.getEnableImageInput();
     final showDebug = await _settingsService.getShowDebugInfo();
     final triggerEnabled = await _settingsService.getTriggerEnabled();
-    final voiceLanguageCodes = await _settingsService.getVoiceLanguageCodes();
+    final voiceLanguageCode =
+        await _settingsService.getPrimaryVoiceLanguageCode();
     final modelInfo = await _modelFileService.inspectModelFile(strict: true);
     final triggerCapabilities = await _triggerService.getCapabilities();
 
@@ -61,9 +62,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _enableImageInput = enableImages;
       _showDebugInfo = showDebug;
       _triggerEnabled = triggerEnabled;
-      _voiceLanguageCodes
-        ..clear()
-        ..addAll(voiceLanguageCodes);
+      _voiceLanguageCode = voiceLanguageCode;
       _modelInfo = modelInfo;
       _triggerCapabilities = triggerCapabilities;
       _loading = false;
@@ -111,34 +110,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ).pushNamedAndRemoveUntil(SplashScreen.routeName, (route) => false);
   }
 
-  Future<void> _toggleVoiceLanguage(String code, bool enabled) async {
-    final next = Set<String>.from(_voiceLanguageCodes);
-
-    if (enabled) {
-      next.add(code);
-    } else {
-      next.remove(code);
-    }
-
-    if (next.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Select at least one speech language.'),
-        ),
-      );
-      return;
-    }
-
-    await _settingsService.setVoiceLanguageCodes(next.toList());
+  Future<void> _setVoiceLanguage(String code) async {
+    await _settingsService.setPrimaryVoiceLanguageCode(code);
     await _modelController?.shutdown();
 
     if (!mounted) return;
 
     setState(() {
-      _voiceLanguageCodes
-        ..clear()
-        ..addAll(next);
+      _voiceLanguageCode = code;
     });
 
     Navigator.of(
@@ -253,10 +232,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final modelError = _modelController?.errorMessage;
         final modelInfo = _modelInfo;
         final trigger = _triggerCapabilities;
-        final selectedLabels = VoiceLanguage.values
-            .where((language) => _voiceLanguageCodes.contains(language.code))
-            .map((language) => language.label)
-            .join(', ');
+        final selectedLabel =
+            VoiceLanguage.fromCode(_voiceLanguageCode).label;
 
         return Scaffold(
           appBar: AppBar(
@@ -306,14 +283,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              _SectionTitle('Voice Languages'),
+              _SectionTitle('Voice Language'),
               const SizedBox(height: 12),
               _SettingsCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Speech recognition languages',
+                      'Speech language',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF111827),
@@ -321,47 +298,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Select one or more speech languages. Lilly will use the device speech recognizer and matching spoken replies for voice chat.',
+                      'Choose one language only. Lilly will listen and reply in this language.',
                       style: TextStyle(
                         color: Color(0xFF4B5563),
                         height: 1.4,
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Theme(
-                      data: Theme.of(context).copyWith(
-                        dividerColor: Colors.transparent,
-                      ),
-                      child: ExpansionTile(
-                        tilePadding: EdgeInsets.zero,
-                        childrenPadding: const EdgeInsets.only(bottom: 8),
-                        title: const Text(
-                          'Languages',
-                          style: TextStyle(
-                            color: Color(0xFF111827),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        subtitle: Text(
-                          selectedLabels.isEmpty ? 'Tap to expand' : selectedLabels,
-                          style: const TextStyle(
-                            color: Color(0xFF6B7280),
-                            height: 1.35,
-                          ),
-                        ),
-                        children: VoiceLanguage.values.map((language) {
-                          return CheckboxListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(language.label),
-                            value: _voiceLanguageCodes.contains(language.code),
-                            onChanged: (checked) => _toggleVoiceLanguage(
-                              language.code,
-                              checked ?? false,
-                            ),
-                          );
-                        }).toList(),
+                    Text(
+                      'Selected: $selectedLabel',
+                      style: const TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    ...VoiceLanguage.values.map((language) {
+                      return RadioListTile<String>(
+                        contentPadding: EdgeInsets.zero,
+                        activeColor: const Color(0xFFC88298),
+                        title: Text(language.label),
+                        subtitle: Text(
+                          'Lilly will listen and reply in ${language.label}.',
+                        ),
+                        value: language.code,
+                        groupValue: _voiceLanguageCode,
+                        onChanged: (value) {
+                          if (value != null) {
+                            _setVoiceLanguage(value);
+                          }
+                        },
+                      );
+                    }),
                   ],
                 ),
               ),
@@ -524,6 +492,34 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
+class _SettingsCard extends StatelessWidget {
+  const _SettingsCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFF0E4E8)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F111827),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: child,
+      ),
+    );
+  }
+}
+
 class _InfoRow extends StatelessWidget {
   const _InfoRow({
     required this.title,
@@ -537,67 +533,41 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final valueWidget = trailingColor == null
+        ? Text(
+            value,
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              color: Color(0xFF374151),
+              fontWeight: FontWeight.w600,
+            ),
+          )
+        : Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: trailingColor,
+              shape: BoxShape.circle,
+            ),
+          );
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 9),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
           Expanded(
             child: Text(
               title,
               style: const TextStyle(
+                color: Color(0xFF6B7280),
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF111827),
               ),
             ),
           ),
-          if (trailingColor != null) ...[
-            Container(
-              width: 10,
-              height: 10,
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: trailingColor,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ],
-          Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: const TextStyle(color: Color(0xFF4B5563)),
-            ),
-          ),
+          const SizedBox(width: 12),
+          Flexible(child: valueWidget),
         ],
       ),
-    );
-  }
-}
-
-class _SettingsCard extends StatelessWidget {
-  const _SettingsCard({
-    required this.child,
-  });
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A111827),
-            blurRadius: 18,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: child,
     );
   }
 }

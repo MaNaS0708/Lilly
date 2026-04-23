@@ -235,7 +235,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         normalized.contains('tell me what is in front of me') ||
         normalized.contains("tell me what's in front of me") ||
         normalized.contains('see what is in front of me') ||
-        normalized.contains("see what's in front of me");
+        normalized.contains("see what's in front of me") ||
+        normalized.contains('what is this') ||
+        normalized.contains("what's this") ||
+        normalized.contains('what is that') ||
+        normalized.contains("what's that") ||
+        normalized.contains('tell me what this is') ||
+        normalized.contains('tell me what that is') ||
+        normalized.contains('what do you see') ||
+        normalized.contains('can you see this');
   }
 
   Future<void> _captureAndProcessVisibleText(String transcript) async {

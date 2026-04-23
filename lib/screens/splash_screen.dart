@@ -21,7 +21,7 @@ class _SplashScreenState extends State<SplashScreen> {
   ModelSetupController? _modelSetupController;
   bool _loadingBootstrap = true;
   bool _needsLanguageSelection = false;
-  final Set<String> _selectedLanguageCodes = <String>{};
+  String? _selectedLanguageCode;
 
   @override
   void initState() {
@@ -109,9 +109,9 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _confirmLanguageSelection() async {
-    if (_selectedLanguageCodes.isEmpty) return;
+    if (_selectedLanguageCode == null) return;
 
-    await _settingsService.setVoiceLanguageCodes(_selectedLanguageCodes.toList());
+    await _settingsService.setPrimaryVoiceLanguageCode(_selectedLanguageCode!);
 
     if (!mounted) return;
     _startModelSetup();
@@ -170,7 +170,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     ),
                     const SizedBox(height: 10),
                     const Text(
-                      'Choose the speech languages you want Lilly to use.',
+                      'Choose one speech language. Lilly will listen and reply only in this language.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 15.5,
@@ -185,67 +185,47 @@ class _SplashScreenState extends State<SplashScreen> {
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(color: const Color(0xFFE9CAD4)),
                       ),
-                      child: Theme(
-                        data: Theme.of(context).copyWith(
-                          dividerColor: Colors.transparent,
-                        ),
-                        child: ExpansionTile(
-                          tilePadding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 6,
-                          ),
-                          childrenPadding: const EdgeInsets.fromLTRB(
-                            18,
-                            0,
-                            18,
-                            14,
-                          ),
-                          collapsedShape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          title: const Text(
-                            'Voice Languages',
-                            style: TextStyle(
-                              color: Color(0xFF473241),
-                              fontWeight: FontWeight.w700,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Voice Language',
+                              style: TextStyle(
+                                color: Color(0xFF473241),
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
-                          subtitle: Text(
-                            _selectedLanguageCodes.isEmpty
-                                ? 'Tap to choose languages'
-                                : '${_selectedLanguageCodes.length} selected',
-                            style: const TextStyle(
-                              color: Color(0xFF776470),
+                            const SizedBox(height: 6),
+                            const Text(
+                              'Only one language is allowed for reliable voice input and voice replies.',
+                              style: TextStyle(
+                                color: Color(0xFF776470),
+                              ),
                             ),
-                          ),
-                          children: VoiceLanguage.values.map((language) {
-                            return CheckboxListTile(
-                              contentPadding: EdgeInsets.zero,
-                              activeColor: const Color(0xFFC88298),
-                              title: Text(
-                                language.label,
-                                style: const TextStyle(
-                                  color: Color(0xFF473241),
-                                  fontWeight: FontWeight.w600,
+                            const SizedBox(height: 10),
+                            ...VoiceLanguage.values.map((language) {
+                              return RadioListTile<String>(
+                                contentPadding: EdgeInsets.zero,
+                                activeColor: const Color(0xFFC88298),
+                                title: Text(
+                                  language.label,
+                                  style: const TextStyle(
+                                    color: Color(0xFF473241),
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                              ),
-                              value: _selectedLanguageCodes.contains(
-                                language.code,
-                              ),
-                              onChanged: (checked) {
-                                setState(() {
-                                  if (checked == true) {
-                                    _selectedLanguageCodes.add(language.code);
-                                  } else {
-                                    _selectedLanguageCodes.remove(language.code);
-                                  }
-                                });
-                              },
-                            );
-                          }).toList(),
+                                value: language.code,
+                                groupValue: _selectedLanguageCode,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedLanguageCode = value;
+                                  });
+                                },
+                              );
+                            }),
+                          ],
                         ),
                       ),
                     ),
@@ -253,7 +233,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton(
-                        onPressed: _selectedLanguageCodes.isEmpty
+                        onPressed: _selectedLanguageCode == null
                             ? null
                             : _confirmLanguageSelection,
                         child: const Text('Continue'),
@@ -299,9 +279,9 @@ class _SplashScreenState extends State<SplashScreen> {
     String messageForState() {
       switch (state) {
         case ModelDownloadState.checking:
-          return 'Checking the Gemma model and your selected speech languages on this device.';
+          return 'Checking the Gemma model and your selected speech language on this device.';
         case ModelDownloadState.needsDownload:
-          return 'Selected languages: ${controller.requiredVoiceLanguageSummary}';
+          return 'Selected language: ${controller.requiredVoiceLanguageSummary}';
         case ModelDownloadState.authenticating:
           return 'Sign in to Hugging Face so Lilly can access the Gemma model.';
         case ModelDownloadState.awaitingLicenseAcceptance:

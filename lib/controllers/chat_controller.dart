@@ -256,14 +256,14 @@ class ChatController extends ChangeNotifier {
           cleanExtractedText.substring(0, _maxExtractedTextChars);
     }
 
-    if (_looksLikeFrontOfMeIntent(cleanUserText)) {
+    if (_looksLikeSceneIntent(cleanUserText)) {
       return '''
-The user asked what is in front of them.
+The user is asking about what is visible in front of them.
 
-You only have OCR text from the camera image.
-Infer the most likely object carefully and honestly.
-If it looks like a book, sign, package, label, document, menu, or poster, say that simply.
-Do not invent visual details not supported by the text.
+You only have OCR text extracted from an automatically captured camera image.
+Infer the object carefully and honestly from the visible text only.
+If it seems like a sign, book, label, package, menu, document, poster, screen, or product, say that simply.
+Do not invent visual details that are not supported by the OCR text.
 
 OCR text:
 $cleanExtractedText
@@ -287,7 +287,7 @@ $cleanExtractedText
 ''';
   }
 
-  bool _looksLikeFrontOfMeIntent(String text) {
+  bool _looksLikeSceneIntent(String text) {
     final normalized = text.toLowerCase();
     return normalized.contains("what's in front of me") ||
         normalized.contains('what is in front of me') ||
@@ -301,7 +301,15 @@ $cleanExtractedText
         normalized.contains('tell me what is in front of me') ||
         normalized.contains("tell me what's in front of me") ||
         normalized.contains('see what is in front of me') ||
-        normalized.contains("see what's in front of me");
+        normalized.contains("see what's in front of me") ||
+        normalized.contains('what is this') ||
+        normalized.contains("what's this") ||
+        normalized.contains('what is that') ||
+        normalized.contains("what's that") ||
+        normalized.contains('tell me what this is') ||
+        normalized.contains('tell me what that is') ||
+        normalized.contains('what do you see') ||
+        normalized.contains('can you see this');
   }
 
   String _friendlyError(String raw) {

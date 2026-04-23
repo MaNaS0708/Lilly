@@ -32,9 +32,21 @@ class SettingsService {
   Future<List<String>> getVoiceLanguageCodes() async {
     final prefs = await SharedPreferences.getInstance();
     final stored = prefs.getStringList(voiceLanguagesKey) ?? const [];
-    return stored
+    final valid = stored
         .where((code) => VoiceLanguage.values.any((item) => item.code == code))
         .toList();
+
+    if (valid.isEmpty) {
+      return [VoiceLanguage.english.code];
+    }
+
+
+    return <String>[valid.first];
+  }
+
+  Future<String> getPrimaryVoiceLanguageCode() async {
+    final stored = await getVoiceLanguageCodes();
+    return stored.isEmpty ? VoiceLanguage.english.code : stored.first;
   }
 
   Future<void> setSaveChatsLocally(bool value) async {
@@ -61,8 +73,13 @@ class SettingsService {
     final prefs = await SharedPreferences.getInstance();
     final valid = values
         .where((code) => VoiceLanguage.values.any((item) => item.code == code))
-        .toSet()
         .toList();
-    await prefs.setStringList(voiceLanguagesKey, valid);
+
+    final selected = valid.isEmpty ? VoiceLanguage.english.code : valid.first;
+    await prefs.setStringList(voiceLanguagesKey, <String>[selected]);
+  }
+
+  Future<void> setPrimaryVoiceLanguageCode(String value) async {
+    await setVoiceLanguageCodes(<String>[value]);
   }
 }
