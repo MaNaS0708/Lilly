@@ -83,6 +83,17 @@ class VoiceService {
         }
       },
       onError: (error) {
+        final message = error.errorMsg.toLowerCase();
+
+        if (message.contains('timeout') ||
+            message.contains('no match') ||
+            message.contains('error_no_match') ||
+            message.contains('error_speech_timeout')) {
+          _listening = false;
+          _events.add(const VoiceEvent(type: 'stopped'));
+          return;
+        }
+
         _listening = false;
         _events.add(
           VoiceEvent(
@@ -130,13 +141,13 @@ class VoiceService {
           ),
         );
       },
-      listenFor: const Duration(seconds: 45),
-      pauseFor: const Duration(seconds: 2),
+      listenFor: const Duration(minutes: 2),
+      pauseFor: const Duration(seconds: 8),
       localeId: localeId,
       listenOptions: SpeechListenOptions(
-        listenMode: ListenMode.confirmation,
+        listenMode: ListenMode.dictation,
         partialResults: true,
-        cancelOnError: true,
+        cancelOnError: false,
       ),
     );
 

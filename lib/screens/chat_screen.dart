@@ -299,6 +299,120 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  String _voicePanelLabel() {
+    if (_isVoicePreparing) return 'Getting Lilly ready...';
+    if (_isVoiceListening) return 'Listening...';
+    if (_isVoiceSpeaking) return 'Lilly is replying...';
+    if (_voiceConversationMode) return 'Voice chat ready';
+    return 'Voice chat';
+  }
+
+  Widget _buildVoiceAssistantPanel() {
+    final showPanel = _voiceConversationMode ||
+        _isVoicePreparing ||
+        _isVoiceListening ||
+        _isVoiceSpeaking;
+
+    if (!showPanel) {
+      return const SizedBox.shrink();
+    }
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: SafeArea(
+        top: false,
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.97),
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x22000000),
+                blurRadius: 24,
+                offset: Offset(0, -4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD7C4CC),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Lilly',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF473241),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _voicePanelLabel(),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: Color(0xFF6B5A67),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(minHeight: 72),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9F1F4),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Text(
+                  _textController.text.trim().isEmpty
+                      ? 'Speak now...'
+                      : _textController.text.trim(),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Color(0xFF473241),
+                    height: 1.35,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _stopVoiceChat,
+                      icon: const Icon(Icons.close_rounded),
+                      label: const Text('Close'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: (_isVoiceListening || _isVoicePreparing)
+                          ? null
+                          : _startVoiceChat,
+                      icon: const Icon(Icons.mic_rounded),
+                      label: const Text('Speak'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _voiceSubscription?.cancel();
@@ -588,29 +702,35 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ],
             ),
-            body: Column(
+            body: Stack(
               children: [
-                if (_chatController.errorMessage != null)
-                  ErrorMessageBanner(
-                    message: _chatController.errorMessage!,
-                    onDismiss: _chatController.dismissError,
-                  ),
-                Expanded(
-                  child: MessageList(
-                    messages: _chatController.messages,
-                    scrollController: _chatController.scrollController,
-                    isLoading: isBusy,
-                    loadingLabel: _loadingLabel(),
-                  ),
+                Column(
+                  children: [
+                    if (_chatController.errorMessage != null)
+                      ErrorMessageBanner(
+                        message: _chatController.errorMessage!,
+                        onDismiss: _chatController.dismissError,
+                      ),
+                    Expanded(
+                      child: MessageList(
+                        messages: _chatController.messages,
+                        scrollController: _chatController.scrollController,
+                        isLoading: isBusy,
+                        loadingLabel: _loadingLabel(),
+                      ),
+                    ),
+                    MessageInputBar(
+                      controller: _textController,
+                      selectedImage: _chatController.selectedImage,
+                      isSending: isBusy,
+                      onPickImage: _showImageSourceSheet,
+                      onRemoveImage: _chatController.removeSelectedImage,
+                      onSend: () =>
+                          _sendMessage(speakReply: _voiceConversationMode),
+                    ),
+                  ],
                 ),
-                MessageInputBar(
-                  controller: _textController,
-                  selectedImage: _chatController.selectedImage,
-                  isSending: isBusy,
-                  onPickImage: _showImageSourceSheet,
-                  onRemoveImage: _chatController.removeSelectedImage,
-                  onSend: () => _sendMessage(speakReply: _voiceConversationMode),
-                ),
+                _buildVoiceAssistantPanel(),
               ],
             ),
           ),
