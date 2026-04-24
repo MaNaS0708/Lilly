@@ -20,7 +20,7 @@ class ModelDownloadSnapshot {
 
 class ModelDownloadManager {
   ModelDownloadManager({ModelFileService? modelFileService})
-    : _modelFileService = modelFileService ?? ModelFileService();
+      : _modelFileService = modelFileService ?? ModelFileService();
 
   final ModelFileService _modelFileService;
   final ReceivePort _port = ReceivePort();
@@ -82,6 +82,31 @@ class ModelDownloadManager {
         shouldDeleteContent: shouldDeleteContent,
       );
     } catch (_) {}
+  }
+
+  Future<void> removeAllModelTasks() async {
+    final tasks = await FlutterDownloader.loadTasks() ?? [];
+    final modelDir = await _modelFileService.getModelDirectoryPath();
+
+    for (final task in tasks) {
+      final filename = (task.filename ?? '').toLowerCase();
+      final url = task.url.toLowerCase();
+      final savedDir = task.savedDir;
+
+      final isGemmaTask =
+          filename == ModelSetupConstants.modelFileName.toLowerCase() ||
+          url.contains(ModelSetupConstants.modelFileName.toLowerCase()) ||
+          savedDir == modelDir;
+
+      if (isGemmaTask) {
+        try {
+          await FlutterDownloader.remove(
+            taskId: task.taskId,
+            shouldDeleteContent: true,
+          );
+        } catch (_) {}
+      }
+    }
   }
 
   Future<ModelDownloadSnapshot?> findTask(String taskId) async {

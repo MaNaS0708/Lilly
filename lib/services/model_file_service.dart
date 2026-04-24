@@ -19,23 +19,52 @@ class ModelFileInfo {
 }
 
 class ModelFileService {
+  static const _modelDirName = 'lilly_models';
+
+  Future<Directory> _getModelDirectory() async {
+    final base = await getApplicationSupportDirectory();
+    final dir = Directory('${base.path}/$_modelDirName');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return dir;
+  }
+
   Future<String> getModelDirectoryPath() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return dir.path;
+    return (await _getModelDirectory()).path;
   }
 
   Future<String> getModelPath() async {
-    final dir = await getModelDirectoryPath();
-    return '$dir/${ModelSetupConstants.modelFileName}';
+    final dir = await _getModelDirectory();
+    return '${dir.path}/${ModelSetupConstants.modelFileName}';
   }
 
   Future<File> getModelFile() async {
     return File(await getModelPath());
   }
 
+  Future<File> _getLegacyModelFile() async {
+    final docs = await getApplicationDocumentsDirectory();
+    return File('${docs.path}/${ModelSetupConstants.modelFileName}');
+  }
+
+  Future<File?> _locateExistingModelFile() async {
+    final current = await getModelFile();
+    if (await current.exists()) {
+      return current;
+    }
+
+    final legacy = await _getLegacyModelFile();
+    if (await legacy.exists()) {
+      return legacy;
+    }
+
+    return null;
+  }
+
   Future<bool> hasValidModelFile({bool strict = false}) async {
-    final file = await getModelFile();
-    if (!await file.exists()) return false;
+    final file = await _locateExistingModelFile();
+    if (file == null || !await file.exists()) return false;
 
     final size = await file.length();
     if (strict) {
@@ -46,10 +75,10 @@ class ModelFileService {
   }
 
   Future<ModelFileInfo> inspectModelFile({bool strict = false}) async {
-    final path = await getModelPath();
-    final file = File(path);
-    final exists = await file.exists();
-    final sizeBytes = exists ? await file.length() : 0;
+    final existing = await _locateExistingModelFile();
+    final targetPath = existing?.path ?? await getModelPath();
+    final exists = existing != null && await existing.exists();
+    final sizeBytes = exists ? await existing.length() : 0;
     final isValid =
         exists &&
         (strict
@@ -60,19 +89,61 @@ class ModelFileService {
       exists: exists,
       sizeBytes: sizeBytes,
       isValid: isValid,
-      path: path,
+      path: targetPath,
     );
   }
 
   Future<void> deleteModelIfExists() async {
-    final file = await getModelFile();
-    if (await file.exists()) {
-      await file.delete();
+    final current = await getModelFile();
+    if (await current.exists()) {
+      await current.delete();
+    }
+
+    final legacy = await _getLegacyModelFile();
+    if (await legacy.exists()) {
+      await legacy.delete();
+    }
+  }
+
+  Future<void> deleteAllModelArtifacts() async {
+    await deleteModelIfExists();
+
+    final currentDir = await _getModelDirectory();
+    await _deleteArtifactsInside(currentDir);
+
+    final docs = await getApplicationDocumentsDirectory();
+    await _deleteArtifactsInside(Directory(docs.path));
+  }
+
+  Future<void> _deleteArtifactsInside(Directory dir) async {
+    if (!await dir.exists()) return;
+
+    await for (final entity in dir.list()) {
+      if (entity is! File) continue;
+
+      final name = entity.path.split('/').last.toLowerCase();
+      final looksLikeGemmaArtifact =
+          name == ModelSetupConstants.modelFileName.toLowerCase() ||
+          name.startsWith(
+            ModelSetupConstants.modelFileName.toLowerCase(),
+          ) ||
+          name.contains('gemma-4-e4b-it') ||
+          name.contains('.litertlm') ||
+          (name.contains('gemma') && name.endsWith('.part')) ||
+          (name.contains('gemma') && name.endsWith('.partial')) ||
+          (name.contains('gemma') && name.endsWith('.tmp')) ||
+          (name.contains('gemma') && name.endsWith('.temp'));
+
+      if (looksLikeGemmaArtifact) {
+        try {
+          await entity.delete();
+        } catch (_) {}
+      }
     }
   }
 
   Future<void> deleteLegacyVoiceAssets() async {
-    final dir = await getModelDirectoryPath();
+    final docs = await getApplicationDocumentsDirectory();
     const legacyNames = [
       'vosk-model-small-en-us-0.15',
       'vosk-model-small-hi-0.22',
@@ -91,7 +162,7 @@ class ModelFileService {
     ];
 
     for (final name in legacyNames) {
-      final path = '$dir/$name';
+      final path = '${docs.path}/$name';
       final file = File(path);
       if (await file.exists()) {
         await file.delete();

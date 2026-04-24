@@ -79,18 +79,41 @@ class ModelSetupController extends ChangeNotifier {
       await _modelFileService.deleteLegacyVoiceAssets();
 
       final gemmaInfo = await _modelFileService.inspectModelFile(strict: true);
-
       if (gemmaInfo.isValid) {
         _completeSetup();
         notifyListeners();
         return;
       }
 
-      if (gemmaInfo.exists && !gemmaInfo.isValid) {
-        await _modelFileService.deleteModelIfExists();
+      _taskId = await _storageService.loadTaskId();
+      if (_taskId != null) {
+        final snapshot = await _modelDownloadManager.findTask(_taskId!);
+        if (snapshot != null) {
+          if (snapshot.status == DownloadTaskStatus.running ||
+              snapshot.status == DownloadTaskStatus.enqueued) {
+            _state = ModelDownloadState.downloading;
+            _progress = snapshot.progress / 100.0;
+            _phaseLabel = 'Downloading Gemma model';
+            _activeModelLabel = ModelSetupConstants.modelFileName;
+            notifyListeners();
+            return;
+          }
+
+          if (snapshot.status == DownloadTaskStatus.complete) {
+            final valid = await _modelFileService.hasValidModelFile(strict: true);
+            if (valid) {
+              _completeSetup();
+              notifyListeners();
+              return;
+            }
+          }
+        }
+
+        await _cleanupGemmaDownloadState();
+      } else if (gemmaInfo.exists && !gemmaInfo.isValid) {
+        await _modelFileService.deleteAllModelArtifacts();
       }
 
-      _taskId = await _storageService.loadTaskId();
       final storedToken = await _hfAuthService.getStoredToken();
       _accessToken = storedToken?.accessToken;
 
@@ -135,10 +158,6 @@ class ModelSetupController extends ChangeNotifier {
       _completeSetup();
       notifyListeners();
       return;
-    }
-
-    if (_taskId != null) {
-      await _cleanupGemmaDownloadState();
     }
 
     if (_accessToken != null && _accessToken!.isNotEmpty) {
@@ -224,10 +243,7 @@ class ModelSetupController extends ChangeNotifier {
   }
 
   Future<void> cancelDownload() async {
-    if (_taskId != null) {
-      await _modelDownloadManager.cancelDownload(_taskId!);
-      await _cleanupGemmaDownloadState(removeTask: false);
-    }
+    await _cleanupGemmaDownloadState();
 
     _state = ModelDownloadState.needsDownload;
     _phaseLabel = 'Setup required';
@@ -244,7 +260,7 @@ class ModelSetupController extends ChangeNotifier {
   }
 
   Future<void> _startGemmaDownload() async {
-    await _cleanupGemmaDownloadState(removeTask: false);
+    await _cleanupGemmaDownloadState();
 
     _state = ModelDownloadState.downloading;
     _progress = 0;
@@ -274,19 +290,13 @@ class ModelSetupController extends ChangeNotifier {
     return selectedCodes.map(VoiceLanguage.fromCode).toList();
   }
 
-  Future<void> _cleanupGemmaDownloadState({bool removeTask = true}) async {
-    final currentTaskId = _taskId;
-    if (removeTask && currentTaskId != null) {
-      await _modelDownloadManager.removeTask(
-        currentTaskId,
-        shouldDeleteContent: true,
-      );
-    }
-
+  Future<void> _cleanupGemmaDownloadState() async {
+    await _modelDownloadManager.removeAllModelTasks();
     await _storageService.clearTaskId();
+    await _storageService.markCompleted(false);
     _taskId = null;
     _progress = 0;
-    await _modelFileService.deleteModelIfExists();
+    await _modelFileService.deleteAllModelArtifacts();
   }
 
   void _completeSetup() {
@@ -299,7 +309,11 @@ class ModelSetupController extends ChangeNotifier {
     _storageService.clearTaskId();
   }
 
-  void _onDownloadEvent(String id, DownloadTaskStatus status, int progress) async {
+  void _onDownloadEvent(
+    String id,
+    DownloadTaskStatus status,
+    int progress,
+  ) async {
     if (_taskId != id) return;
 
     _progress = progress / 100.0;
@@ -317,7 +331,7 @@ class ModelSetupController extends ChangeNotifier {
         _taskId = null;
 
         if (!gemmaValid) {
-          await _cleanupGemmaDownloadState(removeTask: false);
+          await _cleanupGemmaDownloadState();
           _state = ModelDownloadState.error;
           _phaseLabel = 'Gemma validation failed';
           _errorMessage =
@@ -342,7 +356,7 @@ class ModelSetupController extends ChangeNotifier {
         _errorMessage = 'Gemma download was interrupted. Please start again.';
         break;
       case DownloadTaskStatus.canceled:
-        await _cleanupGemmaDownloadState(removeTask: false);
+        await _cleanupGemmaDownloadState();
         _state = ModelDownloadState.needsDownload;
         _phaseLabel = 'Setup required';
         break;
