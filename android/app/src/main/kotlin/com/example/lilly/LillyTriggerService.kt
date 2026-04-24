@@ -122,7 +122,8 @@ class LillyTriggerService : Service() {
     }
 
     private fun handleWakeWordDetected() {
-        updateStatus("Opening voice chat...")
+        updateStatus("Wake word heard. Tap to start voice chat.")
+        showWakeAlert()
 
         mainHandler.post {
             try {
@@ -136,10 +137,8 @@ class LillyTriggerService : Service() {
                 }
                 startActivity(intent)
             } catch (e: Exception) {
-                Log.w(TAG, "Direct voice chat launch was blocked, keeping notification fallback.", e)
+                Log.w(TAG, "Direct voice chat launch was blocked by Android.", e)
             }
-
-            showWakeAlert()
         }
 
         mainHandler.postDelayed(
@@ -153,25 +152,13 @@ class LillyTriggerService : Service() {
     }
 
     private fun buildStatusNotification(contentText: String): Notification {
-        val voicePendingIntent = buildVoiceChatPendingIntent()
-        val openPendingIntent = buildOpenAppPendingIntent()
-
-        val contentIntent = if (
-            contentText.contains("voice chat", ignoreCase = true) ||
-            contentText.contains("wake word heard", ignoreCase = true)
-        ) {
-            voicePendingIntent
-        } else {
-            openPendingIntent
-        }
-
         return NotificationCompat.Builder(this, STATUS_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Lilly assistant standby")
             .setContentText(contentText)
-            .setContentIntent(contentIntent)
-            .addAction(0, "Open Lilly", openPendingIntent)
-            .addAction(0, "Start Voice Chat", voicePendingIntent)
+            .setContentIntent(buildVoiceChatPendingIntent())
+            .addAction(0, "Open Lilly", buildOpenAppPendingIntent())
+            .addAction(0, "Start Voice Chat", buildVoiceChatPendingIntent())
             .setOngoing(true)
             .setSilent(true)
             .setOnlyAlertOnce(false)
