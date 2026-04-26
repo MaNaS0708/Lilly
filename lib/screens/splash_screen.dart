@@ -129,120 +129,138 @@ class _SplashScreenState extends State<SplashScreen> {
           ),
         ),
         child: SafeArea(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 460),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 112,
-                      height: 112,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(30),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x22C88298),
-                            blurRadius: 24,
-                            offset: Offset(0, 12),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight - 48,
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 460),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 112,
+                            height: 112,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(30),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x22C88298),
+                                  blurRadius: 24,
+                                  offset: Offset(0, 12),
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(30),
+                              child: Image.asset(
+                                'assets/images/lilly_logo.png',
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                          const Text(
+                            'Welcome to Lilly',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF473241),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Choose one speech language. Lilly will listen and reply only in this language.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 15.5,
+                              height: 1.55,
+                              color: Color(0xFF776470),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.93),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: const Color(0xFFE9CAD4),
+                              ),
+                            ),
+                            child: RadioGroup<String>(
+                              groupValue: _selectedLanguageCode,
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedLanguageCode = value;
+                                });
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  18,
+                                  18,
+                                  18,
+                                  14,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Voice Language',
+                                      style: TextStyle(
+                                        color: Color(0xFF473241),
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    const Text(
+                                      'Only one language is allowed for reliable voice input and voice replies.',
+                                      style: TextStyle(
+                                        color: Color(0xFF776470),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    ...VoiceLanguage.values.map((language) {
+                                      return RadioListTile<String>(
+                                        contentPadding: EdgeInsets.zero,
+                                        activeColor: const Color(0xFFC88298),
+                                        title: Text(
+                                          language.label,
+                                          style: const TextStyle(
+                                            color: Color(0xFF473241),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        value: language.code,
+                                      );
+                                    }),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              onPressed: _selectedLanguageCode == null
+                                  ? null
+                                  : _confirmLanguageSelection,
+                              child: const Text('Continue'),
+                            ),
                           ),
                         ],
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(30),
-                        child: Image.asset(
-                          'assets/images/lilly_logo.png',
-                          fit: BoxFit.cover,
-                        ),
-                      ),
                     ),
-                    const SizedBox(height: 28),
-                    const Text(
-                      'Welcome to Lilly',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 30,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF473241),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
-                      'Choose one speech language. Lilly will listen and reply only in this language.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 15.5,
-                        height: 1.55,
-                        color: Color(0xFF776470),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.93),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: const Color(0xFFE9CAD4)),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Voice Language',
-                              style: TextStyle(
-                                color: Color(0xFF473241),
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            const Text(
-                              'Only one language is allowed for reliable voice input and voice replies.',
-                              style: TextStyle(
-                                color: Color(0xFF776470),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            ...VoiceLanguage.values.map((language) {
-                              return RadioListTile<String>(
-                                contentPadding: EdgeInsets.zero,
-                                activeColor: const Color(0xFFC88298),
-                                title: Text(
-                                  language.label,
-                                  style: const TextStyle(
-                                    color: Color(0xFF473241),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                value: language.code,
-                                groupValue: _selectedLanguageCode,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedLanguageCode = value;
-                                  });
-                                },
-                              );
-                            }),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: _selectedLanguageCode == null
-                            ? null
-                            : _confirmLanguageSelection,
-                        child: const Text('Continue'),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -291,7 +309,8 @@ class _SplashScreenState extends State<SplashScreen> {
         case ModelDownloadState.ready:
           return 'Gemma is ready. Lilly can now chat by voice and read visible text around you.';
         case ModelDownloadState.error:
-          return controller.errorMessage ?? 'Something went wrong during setup.';
+          return controller.errorMessage ??
+              'Something went wrong during setup.';
       }
     }
 
@@ -306,86 +325,95 @@ class _SplashScreenState extends State<SplashScreen> {
           ),
         ),
         child: SafeArea(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 440),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(24),
-                      child: Image.asset(
-                        'assets/images/lilly_logo.png',
-                        width: 88,
-                        height: 88,
-                        fit: BoxFit.cover,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight - 48,
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 440),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(24),
+                            child: Image.asset(
+                              'assets/images/lilly_logo.png',
+                              width: 88,
+                              height: 88,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Text(
+                            controller.phaseLabel,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF473241),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            messageForState(),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 15.5,
+                              height: 1.55,
+                              color: Color(0xFF776470),
+                            ),
+                          ),
+                          if (state == ModelDownloadState.downloading) ...[
+                            const SizedBox(height: 24),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(999),
+                              child: LinearProgressIndicator(
+                                minHeight: 10,
+                                value: controller.progress == 0
+                                    ? null
+                                    : controller.progress,
+                                backgroundColor: const Color(0xFFF3E1E8),
+                                color: const Color(0xFFC88298),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              '${(controller.progress * 100).toStringAsFixed(0)}%',
+                              style: const TextStyle(
+                                color: Color(0xFF473241),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 24),
+                          if (primaryLabel() != null)
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: _handlePrimaryAction,
+                                child: Text(primaryLabel()!),
+                              ),
+                            ),
+                          if (secondaryLabel() != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: OutlinedButton(
+                                onPressed: _handleSecondaryAction,
+                                child: Text(secondaryLabel()!),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    Text(
-                      controller.phaseLabel,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF473241),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      messageForState(),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 15.5,
-                        height: 1.55,
-                        color: Color(0xFF776470),
-                      ),
-                    ),
-                    if (state == ModelDownloadState.downloading) ...[
-                      const SizedBox(height: 24),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: LinearProgressIndicator(
-                          minHeight: 10,
-                          value: controller.progress == 0
-                              ? null
-                              : controller.progress,
-                          backgroundColor: const Color(0xFFF3E1E8),
-                          color: const Color(0xFFC88298),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        '${(controller.progress * 100).toStringAsFixed(0)}%',
-                        style: const TextStyle(
-                          color: Color(0xFF473241),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 24),
-                    if (primaryLabel() != null)
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: _handlePrimaryAction,
-                          child: Text(primaryLabel()!),
-                        ),
-                      ),
-                    if (secondaryLabel() != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: OutlinedButton(
-                          onPressed: _handleSecondaryAction,
-                          child: Text(secondaryLabel()!),
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -395,9 +423,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loadingBootstrap) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (_needsLanguageSelection) {

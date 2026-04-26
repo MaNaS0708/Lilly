@@ -131,9 +131,10 @@ class NativeModelService implements ModelService {
       }
 
       return ModelResult.success(text: text);
-    } catch (_) {
-      return const ModelResult.failure(
-        errorMessage: 'Native model invocation failed.',
+    } catch (e) {
+      _lastErrorMessage = e.toString().replaceFirst('Exception: ', '');
+      return ModelResult.failure(
+        errorMessage: _lastErrorMessage ?? 'Native model invocation failed.',
       );
     }
   }

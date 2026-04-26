@@ -3,247 +3,253 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class AutoCaptureCameraScreen extends StatefulWidget {
-  const AutoCaptureCameraScreen({super.key});
+  final void Function(File imageFile) onImageCaptured;
+  final Duration captureDelay;
+
+  const AutoCaptureCameraScreen({
+    super.key,
+    required this.onImageCaptured,
+    this.captureDelay = const Duration(milliseconds: 1500),
+  });
 
   @override
   State<AutoCaptureCameraScreen> createState() =>
       _AutoCaptureCameraScreenState();
 }
 
-class _AutoCaptureCameraScreenState extends State<AutoCaptureCameraScreen> {
+class _AutoCaptureCameraScreenState extends State<AutoCaptureCameraScreen>
+    with WidgetsBindingObserver {
   CameraController? _controller;
-  String? _errorMessage;
-  bool _initializing = true;
   bool _capturing = false;
-  bool _initialized = false;
+  bool _disposed = false;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _setupCamera();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+
+    if (state == AppLifecycleState.inactive) {
+      controller.dispose();
+    } else if (state == AppLifecycleState.resumed) {
+      _setupCamera();
+    }
   }
 
   Future<void> _setupCamera() async {
     try {
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
-        throw Exception('No camera was found on this device.');
+        await _handleError('No camera found on this device.');
+        return;
       }
 
-      final backCamera = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.back,
+      final camera = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
 
       final controller = CameraController(
-        backCamera,
+        camera,
         ResolutionPreset.medium,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
 
       await controller.initialize();
-      await controller.setFlashMode(FlashMode.off);
 
-      if (!mounted) {
-        await controller.dispose();
+      if (_disposed) {
+        controller.dispose();
         return;
       }
 
-      setState(() {
-        _controller = controller;
-        _initializing = false;
-        _initialized = true;
-      });
-
-      await Future<void>.delayed(const Duration(milliseconds: 900));
       if (mounted) {
-        await _capturePhoto();
+        setState(() => _controller = controller);
       }
+
+      HapticFeedback.mediumImpact();
+      Future.delayed(widget.captureDelay, _capturePhoto);
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _initializing = false;
-        _errorMessage = e.toString().replaceFirst('Exception: ', '');
-      });
+      await _handleError('Could not open camera. $e');
     }
   }
 
   Future<void> _capturePhoto() async {
+    if (_capturing || _disposed) return;
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized || _capturing) {
-      return;
-    }
+    if (controller == null || !controller.value.isInitialized) return;
 
-    setState(() {
-      _capturing = true;
-    });
+    _capturing = true;
 
     try {
-      final file = await controller.takePicture();
-      if (!mounted) return;
-      Navigator.of(context).pop(File(file.path));
+      final xFile = await controller.takePicture();
+      final imageFile = File(xFile.path);
+
+      HapticFeedback.heavyImpact();
+      await Future<void>.delayed(const Duration(milliseconds: 140));
+      HapticFeedback.heavyImpact();
+
+      if (!_disposed) {
+        widget.onImageCaptured(imageFile);
+        if (mounted) {
+          Navigator.of(context).pop(imageFile);
+        }
+      }
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _capturing = false;
-        _errorMessage = 'Could not capture the photo automatically.';
-      });
+      await _handleError('Could not take photo. Tap to try again.');
+      _capturing = false;
     }
   }
 
-  @override
-  void dispose() {
-    unawaited(_controller?.dispose());
-    super.dispose();
+  Future<void> _handleError(String message) async {
+    HapticFeedback.vibrate();
+    if (mounted) {
+      setState(() => _errorMessage = message);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    const blush = Color(0xFFF5D2DD);
-    const cream = Color(0xFFFFFBF8);
-    const text = Color(0xFF433040);
-    const rose = Color(0xFFC9859B);
-
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: _initialized && _controller != null
-                ? CameraPreview(_controller!)
-                : Container(color: Colors.black),
-          ),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withValues(alpha: 0.30),
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.35),
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_errorMessage != null) {
+      return _ErrorView(
+        message: _errorMessage!,
+        onRetry: () {
+          setState(() {
+            _errorMessage = null;
+            _capturing = false;
+          });
+          _setupCamera();
+        },
+      );
+    }
+
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        CameraPreview(controller),
+        GestureDetector(
+          onDoubleTap: _capturePhoto,
+          behavior: HitTestBehavior.translucent,
+          child: const SizedBox.expand(),
+        ),
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Double-tap anywhere to capture',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: _capturing ? null : _capturePhoto,
+                    child: Container(
+                      width: 70,
+                      height: 70,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 3),
+                        color: _capturing
+                            ? Colors.white38
+                            : Colors.white.withValues(alpha: 0.15),
+                      ),
+                      child: _capturing
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.5,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.camera_alt_rounded,
+                              color: Colors.white,
+                              size: 32,
+                            ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          SafeArea(
-            child: Column(
-              children: [
-                Align(
-                  alignment: Alignment.topLeft,
-                  child: IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded, color: Colors.white),
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  margin: const EdgeInsets.all(20),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 16,
-                  ),
-                  decoration: BoxDecoration(
-                    color: cream.withValues(alpha: 0.94),
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_initializing) ...[
-                        const CircularProgressIndicator(),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Opening camera and taking a photo...',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: text,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ] else if (_capturing) ...[
-                        const CircularProgressIndicator(),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Capturing what is in front of you...',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: text,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ] else if (_errorMessage != null) ...[
-                        Text(
-                          _errorMessage!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: text,
-                            fontSize: 14,
-                            height: 1.4,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        FilledButton(
-                          onPressed: _setupCamera,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: rose,
-                            foregroundColor: Colors.white,
-                          ),
-                          child: const Text('Try Again'),
-                        ),
-                      ] else ...[
-                        const Text(
-                          'Hold steady for a second',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: text,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'Lilly will take the picture automatically.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Color(0xFF6B5A67),
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        OutlinedButton(
-                          onPressed: _capturePhoto,
-                          child: const Text('Capture Now'),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ErrorView extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _ErrorView({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.camera_alt_outlined,
+              color: Colors.white38,
+              size: 64,
             ),
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Center(
-                child: Container(
-                  width: 260,
-                  height: 330,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(color: blush, width: 2),
-                  ),
-                ),
+            const SizedBox(height: 24),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, fontSize: 15),
+            ),
+            const SizedBox(height: 28),
+            ElevatedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Try Again'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black87,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

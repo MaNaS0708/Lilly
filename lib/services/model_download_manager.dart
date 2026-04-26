@@ -1,6 +1,7 @@
-import 'dart:isolate';
-import 'dart:ui';
+import 'dart:async';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 
 import '../config/model_setup_constants.dart';
@@ -20,54 +21,64 @@ class ModelDownloadSnapshot {
 
 class ModelDownloadManager {
   ModelDownloadManager({ModelFileService? modelFileService})
-      : _modelFileService = modelFileService ?? ModelFileService();
+    : _modelFileService = modelFileService ?? ModelFileService();
 
   final ModelFileService _modelFileService;
-  final ReceivePort _port = ReceivePort();
+
+  void Function(String, DownloadTaskStatus, int)? _eventListener;
+
+  HttpClient? _client;
+  IOSink? _sink;
+  bool _cancelRequested = false;
+  String? _activeTaskId;
+  DownloadTaskStatus _activeStatus = DownloadTaskStatus.undefined;
+  int _activeProgress = 0;
 
   void initializePort(void Function(String, DownloadTaskStatus, int) onEvent) {
-    IsolateNameServer.removePortNameMapping('lilly_downloader_send_port');
-    IsolateNameServer.registerPortWithName(
-      _port.sendPort,
-      'lilly_downloader_send_port',
-    );
-
-    _port.listen((dynamic data) {
-      final id = data[0] as String;
-      final status = DownloadTaskStatus.fromInt(data[1] as int);
-      final progress = data[2] as int;
-      onEvent(id, status, progress);
-    });
+    _eventListener = onEvent;
   }
 
   void disposePort() {
-    IsolateNameServer.removePortNameMapping('lilly_downloader_send_port');
-    _port.close();
+    _eventListener = null;
   }
 
   Future<String?> startDownload({String? accessToken}) async {
-    final modelDir = await _modelFileService.getModelDirectoryPath();
-
-    final headers = <String, String>{};
-    if (accessToken != null && accessToken.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $accessToken';
+    if (_activeTaskId != null) {
+      return _activeTaskId;
     }
 
-    return FlutterDownloader.enqueue(
-      url: ModelSetupConstants.modelUrl,
-      savedDir: modelDir,
-      fileName: ModelSetupConstants.modelFileName,
-      headers: headers,
-      showNotification: true,
-      openFileFromNotification: false,
-      saveInPublicStorage: false,
-    );
+    final taskId = 'gemma-${DateTime.now().millisecondsSinceEpoch}';
+    _activeTaskId = taskId;
+    _activeStatus = DownloadTaskStatus.enqueued;
+    _activeProgress = 0;
+    _cancelRequested = false;
+
+    _emit(taskId, DownloadTaskStatus.enqueued, 0);
+    unawaited(_runDownload(taskId, accessToken: accessToken));
+    return taskId;
   }
 
   Future<void> cancelDownload(String taskId) async {
-    try {
-      await FlutterDownloader.cancel(taskId: taskId);
-    } catch (_) {}
+    if (_activeTaskId == taskId) {
+      _cancelRequested = true;
+
+      try {
+        _client?.close(force: true);
+      } catch (_) {}
+
+      try {
+        await _sink?.flush();
+      } catch (_) {}
+
+      try {
+        await _sink?.close();
+      } catch (_) {}
+
+      await _deletePartialFile();
+      _emit(taskId, DownloadTaskStatus.canceled, _activeProgress);
+      _resetActiveState();
+      return;
+    }
 
     await removeTask(taskId, shouldDeleteContent: true);
   }
@@ -76,50 +87,184 @@ class ModelDownloadManager {
     String taskId, {
     bool shouldDeleteContent = true,
   }) async {
-    try {
-      await FlutterDownloader.remove(
-        taskId: taskId,
-        shouldDeleteContent: shouldDeleteContent,
-      );
-    } catch (_) {}
+    if (_activeTaskId == taskId) {
+      await cancelDownload(taskId);
+      return;
+    }
+
+    if (shouldDeleteContent) {
+      await _deletePartialFile();
+    }
   }
 
   Future<void> removeAllModelTasks() async {
-    final tasks = await FlutterDownloader.loadTasks() ?? [];
-    final modelDir = await _modelFileService.getModelDirectoryPath();
+    if (_activeTaskId != null) {
+      await cancelDownload(_activeTaskId!);
+    } else {
+      await _deletePartialFile();
+    }
+  }
 
-    for (final task in tasks) {
-      final filename = (task.filename ?? '').toLowerCase();
-      final url = task.url.toLowerCase();
-      final savedDir = task.savedDir;
+  Future<void> removeInactiveModelTasks() async {
+    if (_activeTaskId == null) {
+      await _deletePartialFile();
+      return;
+    }
 
-      final isGemmaTask =
-          filename == ModelSetupConstants.modelFileName.toLowerCase() ||
-          url.contains(ModelSetupConstants.modelFileName.toLowerCase()) ||
-          savedDir == modelDir;
+    final isActive =
+        _activeStatus == DownloadTaskStatus.running ||
+        _activeStatus == DownloadTaskStatus.enqueued;
 
-      if (isGemmaTask) {
-        try {
-          await FlutterDownloader.remove(
-            taskId: task.taskId,
-            shouldDeleteContent: true,
-          );
-        } catch (_) {}
-      }
+    if (!isActive) {
+      await _deletePartialFile();
+      _resetActiveState();
     }
   }
 
   Future<ModelDownloadSnapshot?> findTask(String taskId) async {
-    final tasks = await FlutterDownloader.loadTasks() ?? [];
-    for (final task in tasks) {
-      if (task.taskId == taskId) {
-        return ModelDownloadSnapshot(
-          taskId: task.taskId,
-          status: task.status,
-          progress: task.progress,
-        );
-      }
+    if (_activeTaskId == taskId) {
+      return ModelDownloadSnapshot(
+        taskId: _activeTaskId,
+        status: _activeStatus,
+        progress: _activeProgress,
+      );
     }
     return null;
   }
+
+  Future<ModelDownloadSnapshot?> findAnyModelTask() async {
+    if (_activeTaskId == null) return null;
+
+    return ModelDownloadSnapshot(
+      taskId: _activeTaskId,
+      status: _activeStatus,
+      progress: _activeProgress,
+    );
+  }
+
+  Future<String> debugDescribeTasks() async {
+    if (_activeTaskId == null) return 'No in-app download task';
+    return 'taskId=$_activeTaskId status=$_activeStatus progress=$_activeProgress';
+  }
+
+  Future<void> _runDownload(
+    String taskId, {
+    String? accessToken,
+  }) async {
+    final targetPath = await _modelFileService.getModelPath();
+    final partialPath = '$targetPath.partial';
+    final targetFile = File(targetPath);
+    final partialFile = File(partialPath);
+
+    try {
+      await partialFile.parent.create(recursive: true);
+      if (await partialFile.exists()) {
+        await partialFile.delete();
+      }
+
+      _client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 30);
+
+      final request = await _client!.getUrl(
+        Uri.parse(ModelSetupConstants.modelUrl),
+      );
+
+      if (accessToken != null && accessToken.isNotEmpty) {
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $accessToken');
+      }
+
+      final response = await request.close();
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException(
+          'Gemma download failed with HTTP ${response.statusCode}.',
+        );
+      }
+
+      final totalBytes = response.contentLength;
+      var downloadedBytes = 0;
+
+      _sink = partialFile.openWrite(mode: FileMode.writeOnlyAppend);
+      _emit(taskId, DownloadTaskStatus.running, 0);
+
+      await for (final chunk in response) {
+        if (_cancelRequested) {
+          throw const _CanceledDownloadException();
+        }
+
+        _sink!.add(chunk);
+        downloadedBytes += chunk.length;
+
+        final progress = totalBytes > 0
+            ? ((downloadedBytes / totalBytes) * 100).clamp(0, 99).toInt()
+            : 0;
+
+        _emit(taskId, DownloadTaskStatus.running, progress);
+      }
+
+      await _sink!.flush();
+      await _sink!.close();
+      _sink = null;
+      _client?.close(force: false);
+      _client = null;
+
+      if (_cancelRequested) {
+        throw const _CanceledDownloadException();
+      }
+
+      if (await targetFile.exists()) {
+        await targetFile.delete();
+      }
+
+      await partialFile.rename(targetPath);
+      _emit(taskId, DownloadTaskStatus.complete, 100);
+    } on _CanceledDownloadException {
+      debugPrint('[LillySetup] In-app Gemma download canceled.');
+      await _deletePartialFile();
+      _emit(taskId, DownloadTaskStatus.canceled, _activeProgress);
+    } catch (e) {
+      debugPrint('[LillySetup] In-app Gemma download failed: $e');
+      await _deletePartialFile();
+      _emit(taskId, DownloadTaskStatus.failed, _activeProgress);
+    } finally {
+      try {
+        _client?.close(force: true);
+      } catch (_) {}
+
+      try {
+        await _sink?.close();
+      } catch (_) {}
+
+      _client = null;
+      _sink = null;
+      _resetActiveState();
+    }
+  }
+
+  Future<void> _deletePartialFile() async {
+    final partial = File('${await _modelFileService.getModelPath()}.partial');
+    if (await partial.exists()) {
+      try {
+        await partial.delete();
+      } catch (_) {}
+    }
+  }
+
+  void _emit(String taskId, DownloadTaskStatus status, int progress) {
+    _activeTaskId = taskId;
+    _activeStatus = status;
+    _activeProgress = progress;
+    _eventListener?.call(taskId, status, progress);
+  }
+
+  void _resetActiveState() {
+    _cancelRequested = false;
+    _activeTaskId = null;
+    _activeStatus = DownloadTaskStatus.undefined;
+    _activeProgress = 0;
+  }
+}
+
+class _CanceledDownloadException implements Exception {
+  const _CanceledDownloadException();
 }

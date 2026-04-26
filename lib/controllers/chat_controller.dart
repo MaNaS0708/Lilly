@@ -6,8 +6,10 @@ import 'package:flutter/material.dart';
 import '../models/chat_conversation.dart';
 import '../models/chat_message.dart';
 import '../models/model_request.dart';
+import '../models/model_result.dart';
 import '../services/conversation_title_service.dart';
 import '../services/text_recognition_service.dart';
+import '../services/visual_intent_service.dart';
 import 'model_controller.dart';
 
 class ChatController extends ChangeNotifier {
@@ -71,18 +73,6 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void clearActiveConversation() {
-    final current = _conversation;
-    if (current == null) return;
-
-    _conversation = current.copyWith(
-      messages: const [],
-      updatedAt: DateTime.now(),
-      title: 'New Chat',
-    );
-    notifyListeners();
-  }
-
   Future<ChatConversation?> sendMessage(String rawText) async {
     final current = _conversation;
     if (current == null) return null;
@@ -124,71 +114,19 @@ class ChatController extends ChangeNotifier {
       return workingConversation;
     }
 
-    var effectivePrompt = text;
-
-    if (image != null) {
-      try {
-        final extractedText = await _textRecognitionService.extractTextFromFile(
-          image.path,
-        );
-
-        if (extractedText.isEmpty) {
-          const failureText =
-              'I could not find readable text in that image. Try a clearer photo with better lighting.';
-
-          final assistantError = ChatMessage(
-            text: failureText,
-            isUser: false,
-            createdAt: DateTime.now(),
+    final result = image == null
+        ? await _modelController.generateResponse(
+            ModelRequest(
+              prompt: text,
+              history: historySnapshot,
+              imagePath: null,
+            ),
+          )
+        : await _generateImageAwareResponse(
+            userText: text,
+            image: image,
+            history: historySnapshot,
           );
-
-          workingConversation = _conversation!.copyWith(
-            messages: [..._conversation!.messages, assistantError],
-            updatedAt: DateTime.now(),
-          );
-
-          _conversation = workingConversation;
-          _errorMessage = failureText;
-          notifyListeners();
-          _scrollToBottomSoon();
-          return workingConversation;
-        }
-
-        effectivePrompt = _buildPromptFromImageText(
-          userText: text,
-          extractedText: extractedText,
-        );
-      } catch (e) {
-        final failureText = _friendlyError(
-          'Failed to read text from the selected image: $e',
-        );
-
-        final assistantError = ChatMessage(
-          text: failureText,
-          isUser: false,
-          createdAt: DateTime.now(),
-        );
-
-        workingConversation = _conversation!.copyWith(
-          messages: [..._conversation!.messages, assistantError],
-          updatedAt: DateTime.now(),
-        );
-
-        _conversation = workingConversation;
-        _errorMessage = failureText;
-        notifyListeners();
-        _scrollToBottomSoon();
-        return workingConversation;
-      }
-    }
-
-    final result = await _modelController.generateResponse(
-      ModelRequest(
-        prompt: effectivePrompt,
-        history: historySnapshot,
-        imagePath: null,
-      ),
-    );
 
     if (!result.success) {
       final failureText = _friendlyError(
@@ -230,6 +168,64 @@ class ChatController extends ChangeNotifier {
     return conversationWithReply;
   }
 
+  Future<ModelResult> _generateImageAwareResponse({
+    required String userText,
+    required File image,
+    required List<ChatMessage> history,
+  }) async {
+    final visionResult = await _modelController.generateResponse(
+      ModelRequest(
+        prompt: _buildVisionPrompt(userText: userText),
+        history: history,
+        imagePath: image.path,
+      ),
+    );
+
+    if (visionResult.success) {
+      return visionResult;
+    }
+
+    try {
+      final extractedText = await _textRecognitionService.extractTextFromFile(
+        image.path,
+      );
+
+      if (extractedText.isEmpty) {
+        return ModelResult.failure(
+          errorMessage:
+              visionResult.errorMessage ??
+              'I could not find readable text in that image. Try a clearer photo with better lighting.',
+        );
+      }
+
+      final fallbackResult = await _modelController.generateResponse(
+        ModelRequest(
+          prompt: _buildPromptFromImageText(
+            userText: userText,
+            extractedText: extractedText,
+          ),
+          history: history,
+          imagePath: null,
+        ),
+      );
+
+      if (fallbackResult.success) {
+        return fallbackResult;
+      }
+
+      return ModelResult.failure(
+        errorMessage: fallbackResult.errorMessage ?? visionResult.errorMessage,
+      );
+    } catch (e) {
+      return ModelResult.failure(
+        errorMessage: _friendlyError(
+          visionResult.errorMessage ??
+              'Failed to read text from the selected image: $e',
+        ),
+      );
+    }
+  }
+
   List<ChatMessage> _trimHistory(List<ChatMessage> source) {
     if (_maxHistoryMessages <= 0) {
       return const <ChatMessage>[];
@@ -244,6 +240,66 @@ class ChatController extends ChangeNotifier {
     );
   }
 
+  String _buildVisionPrompt({
+    required String userText,
+  }) {
+    final cleanUserText = userText.trim();
+
+    if (cleanUserText.isEmpty) {
+      return '''
+      The user attached an image.
+      Describe the main object or scene briefly.
+      If readable text is visible, include the important parts.
+      If you are unsure, say so honestly.
+      ''';
+    }
+
+    if (VisualIntentService.asksToReadText(cleanUserText)) {
+      return '''
+      The user attached an image and wants help reading visible text.
+      Use the image as the source of truth.
+      Transcribe the important text first, then answer briefly.
+      If the text is unclear, say so clearly.
+
+      User request:
+      $cleanUserText
+      ''';
+    }
+
+    if (VisualIntentService.asksToIdentifyObject(cleanUserText)) {
+      return '''
+      The user attached an image and wants to know what the visible thing, object, or scene is.
+      Use the image as the primary source of truth.
+      Identify the main object or scene first in one short sentence.
+      Then add any important visible text or context.
+      If uncertain, say what it most likely is and why briefly.
+
+      User request:
+      $cleanUserText
+      ''';
+    }
+
+    if (VisualIntentService.asksToDescribeScene(cleanUserText)) {
+      return '''
+      The user attached an image and wants help with what is visible around them.
+      Answer using the image as the primary source of truth.
+      Describe the main scene briefly and include any important readable text.
+
+      User request:
+      $cleanUserText
+      ''';
+    }
+
+    return '''
+    The user attached an image.
+    Answer using the image as the primary context.
+    If the user's words are vague, briefly describe the image first and then answer.
+
+    User request:
+    $cleanUserText
+    ''';
+  }
+
   String _buildPromptFromImageText({
     required String userText,
     required String extractedText,
@@ -256,61 +312,81 @@ class ChatController extends ChangeNotifier {
           cleanExtractedText.substring(0, _maxExtractedTextChars);
     }
 
-    if (_looksLikeSceneIntent(cleanUserText)) {
+    if (VisualIntentService.asksToReadText(cleanUserText)) {
       return '''
-The user is asking about what is visible in front of them.
+      The user wants help reading visible text from an image.
+      You only have OCR text, not the pixels.
+      Read the important text first, then answer briefly.
+      If the OCR looks incomplete or noisy, say so clearly.
 
-You only have OCR text extracted from an automatically captured camera image.
-Infer the object carefully and honestly from the visible text only.
-If it seems like a sign, book, label, package, menu, document, poster, screen, or product, say that simply.
-Do not invent visual details that are not supported by the OCR text.
+      User request:
+      $cleanUserText
 
-OCR text:
-$cleanExtractedText
-''';
+      OCR text:
+      $cleanExtractedText
+      ''';
+    }
+
+    if (VisualIntentService.asksToIdentifyObject(cleanUserText)) {
+      return '''
+      The user likely wants to identify an object or scene, but you only have OCR text from the image.
+      Use the OCR only to infer context when it is genuinely obvious.
+      If the OCR is not enough to identify the object, say clearly that text alone is not enough.
+
+      User request:
+      $cleanUserText
+
+      OCR text:
+      $cleanExtractedText
+      ''';
+    }
+
+    if (VisualIntentService.asksToDescribeScene(cleanUserText)) {
+      return '''
+      The user is asking about what is visible around them, but you only have OCR text from the image.
+      Summarize what the OCR suggests.
+      Do not invent visual details that are not supported by the text.
+
+      User request:
+      $cleanUserText
+
+      OCR text:
+      $cleanExtractedText
+      ''';
     }
 
     if (cleanUserText.isEmpty) {
       return '''
-Help with this OCR text from an image.
+      The user attached an image.
+      You cannot inspect the pixels directly in this fallback path.
+      You only have OCR text extracted from the image.
 
-OCR text:
-$cleanExtractedText
-''';
+      Read the visible text and summarize the important parts.
+
+      OCR text:
+      $cleanExtractedText
+      ''';
     }
 
     return '''
-$cleanUserText
+    The user attached an image.
+    You cannot inspect the pixels directly in this fallback path.
+    You only have OCR text extracted from the image.
+    Answer using only that OCR text.
+    If the request cannot be answered from the readable text, say so clearly.
 
-OCR text:
-$cleanExtractedText
-''';
+    User request:
+    $cleanUserText
+
+    OCR text:
+    $cleanExtractedText
+    ''';
   }
 
   bool _looksLikeSceneIntent(String text) {
-    final normalized = text.toLowerCase();
-    return normalized.contains("what's in front of me") ||
-        normalized.contains('what is in front of me') ||
-        normalized.contains("read what's in front of me") ||
-        normalized.contains('read what is in front of me') ||
-        normalized.contains("what's written in front of me") ||
-        normalized.contains('what is written in front of me') ||
-        normalized.contains('read the text in front of me') ||
-        normalized.contains('scan the text in front of me') ||
-        normalized.contains('what do you see in front of me') ||
-        normalized.contains('tell me what is in front of me') ||
-        normalized.contains("tell me what's in front of me") ||
-        normalized.contains('see what is in front of me') ||
-        normalized.contains("see what's in front of me") ||
-        normalized.contains('what is this') ||
-        normalized.contains("what's this") ||
-        normalized.contains('what is that') ||
-        normalized.contains("what's that") ||
-        normalized.contains('tell me what this is') ||
-        normalized.contains('tell me what that is') ||
-        normalized.contains('what do you see') ||
-        normalized.contains('can you see this');
+    return VisualIntentService.shouldAutoCaptureForPrompt(text);
   }
+
 
   String _friendlyError(String raw) {
     final message = raw.replaceFirst('Exception: ', '').trim();
@@ -326,6 +402,12 @@ $cleanExtractedText
       return 'The local model is not ready yet. Wait for it to finish loading, then try again.';
     }
 
+    if (lower.contains('nativesendmessage') ||
+        lower.contains('failed to invoke the compiled model') ||
+        lower.contains('compiled_model_executor')) {
+      return 'Voice chat hit a temporary on-device model failure. Lilly will retry with a safer backend automatically. If it still happens, reopen the app and try again.';
+    }
+
     if (lower.contains('native library') ||
         lower.contains('jni') ||
         lower.contains('litert')) {
@@ -338,6 +420,13 @@ $cleanExtractedText
 
     if (lower.contains('read text from the selected image')) {
       return 'Lilly could not read text from that image. Try a clearer photo or better lighting.';
+    }
+
+    if (lower.contains('image') &&
+        (lower.contains('native') ||
+            lower.contains('vision') ||
+            lower.contains('compiled model'))) {
+      return 'Lilly could not process that image with the on-device model. It will fall back to readable text when possible.';
     }
 
     return message;
@@ -366,6 +455,7 @@ $cleanExtractedText
 
   @override
   void dispose() {
+    unawaited(_textRecognitionService.dispose());
     scrollController.removeListener(_handleScrollPositionChanged);
     scrollController.dispose();
     super.dispose();

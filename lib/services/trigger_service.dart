@@ -20,10 +20,23 @@ class TriggerService {
       );
     }
 
-    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      'getTriggerCapabilities',
-    );
-    return TriggerCapabilities.fromMap(result);
+    try {
+      final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'getTriggerCapabilities',
+      );
+      return TriggerCapabilities.fromMap(result);
+    } catch (_) {
+      return const TriggerCapabilities(
+        platformSupported: false,
+        backgroundServiceSupported: false,
+        wakeWordReady: false,
+        notificationPermissionRecommended: false,
+        microphonePermissionRecommended: false,
+        isRunning: false,
+        autostartEnabled: false,
+        notes: 'Could not read trigger capabilities.',
+      );
+    }
   }
 
   Future<bool> startForegroundTrigger() async {

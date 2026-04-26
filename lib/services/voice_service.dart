@@ -45,6 +45,8 @@ class VoiceService {
   String _lastRecognizedText = '';
   bool _finalAlreadyEmitted = false;
   List<LocaleName> _availableSpeechLocales = const [];
+  int _activeSessionId = 0;
+  bool _suppressRecognizerCallbacks = false;
 
   Stream<VoiceEvent> get events => _events.stream;
 
@@ -69,6 +71,10 @@ class VoiceService {
 
     _speechReady = await _speech.initialize(
       onStatus: (status) {
+        if (_suppressRecognizerCallbacks) {
+          return;
+        }
+
         final normalized = status.toLowerCase();
 
         if (normalized.contains('listening')) {
@@ -90,6 +96,10 @@ class VoiceService {
         }
       },
       onError: (error) {
+        if (_suppressRecognizerCallbacks) {
+          return;
+        }
+
         final message = error.errorMsg.toLowerCase();
         final isSoftStop = message.contains('timeout') ||
             message.contains('no match') ||
@@ -137,6 +147,9 @@ class VoiceService {
     final ready = _speechReady || await initializeVoiceModel();
     if (!ready) return false;
 
+    _activeSessionId++;
+    final sessionId = _activeSessionId;
+    _suppressRecognizerCallbacks = false;
     _lastRecognizedText = '';
     _finalAlreadyEmitted = false;
 
@@ -148,6 +161,10 @@ class VoiceService {
       final localeId = await _resolveSpeechLocale();
       await _speech.listen(
         onResult: (result) {
+          if (_suppressRecognizerCallbacks || sessionId != _activeSessionId) {
+            return;
+          }
+
           final text = result.recognizedWords.trim();
           if (text.isEmpty) return;
 
@@ -174,8 +191,6 @@ class VoiceService {
         ),
       );
 
-      _listening = true;
-      _events.add(const VoiceEvent(type: 'listening'));
       return true;
     } catch (e) {
       _listening = false;
@@ -189,9 +204,24 @@ class VoiceService {
     }
   }
 
-  Future<bool> stopListening() async {
+  Future<bool> stopListening({bool clearBufferedText = false}) async {
+    _activeSessionId++;
+    _suppressRecognizerCallbacks = true;
     _listening = false;
-    await _speech.stop();
+
+    if (clearBufferedText) {
+      _lastRecognizedText = '';
+      _finalAlreadyEmitted = true;
+    }
+
+    try {
+      await _speech.stop();
+    } catch (_) {}
+
+    try {
+      await _speech.cancel();
+    } catch (_) {}
+
     _events.add(const VoiceEvent(type: 'stopped'));
     return true;
   }
@@ -200,7 +230,7 @@ class VoiceService {
     final cleaned = text.trim();
     if (cleaned.isEmpty) return;
 
-    await stopListening();
+    await stopListening(clearBufferedText: true);
     await _prepareTts();
     await _tts.speak(cleaned);
   }

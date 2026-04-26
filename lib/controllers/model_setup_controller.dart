@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -85,34 +86,8 @@ class ModelSetupController extends ChangeNotifier {
         return;
       }
 
-      _taskId = await _storageService.loadTaskId();
-      if (_taskId != null) {
-        final snapshot = await _modelDownloadManager.findTask(_taskId!);
-        if (snapshot != null) {
-          if (snapshot.status == DownloadTaskStatus.running ||
-              snapshot.status == DownloadTaskStatus.enqueued) {
-            _state = ModelDownloadState.downloading;
-            _progress = snapshot.progress / 100.0;
-            _phaseLabel = 'Downloading Gemma model';
-            _activeModelLabel = ModelSetupConstants.modelFileName;
-            notifyListeners();
-            return;
-          }
-
-          if (snapshot.status == DownloadTaskStatus.complete) {
-            final valid = await _modelFileService.hasValidModelFile(strict: true);
-            if (valid) {
-              _completeSetup();
-              notifyListeners();
-              return;
-            }
-          }
-        }
-
-        await _cleanupGemmaDownloadState();
-      } else if (gemmaInfo.exists && !gemmaInfo.isValid) {
-        await _modelFileService.deleteAllModelArtifacts();
-      }
+      await _storageService.clearTaskId();
+      _taskId = null;
 
       final storedToken = await _hfAuthService.getStoredToken();
       _accessToken = storedToken?.accessToken;
@@ -159,6 +134,10 @@ class ModelSetupController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+
+    await _modelFileService.deleteAllModelArtifacts();
+    await _storageService.clearTaskId();
+    _taskId = null;
 
     if (_accessToken != null && _accessToken!.isNotEmpty) {
       final tokenStatus = await _modelDownloadService.checkAccess(_accessToken);
@@ -243,7 +222,16 @@ class ModelSetupController extends ChangeNotifier {
   }
 
   Future<void> cancelDownload() async {
-    await _cleanupGemmaDownloadState();
+    if (_taskId != null) {
+      await _modelDownloadManager.cancelDownload(_taskId!);
+    } else {
+      await _modelFileService.deleteAllModelArtifacts();
+    }
+
+    await _storageService.clearTaskId();
+    await _storageService.markCompleted(false);
+    _taskId = null;
+    _progress = 0;
 
     _state = ModelDownloadState.needsDownload;
     _phaseLabel = 'Setup required';
@@ -260,14 +248,14 @@ class ModelSetupController extends ChangeNotifier {
   }
 
   Future<void> _startGemmaDownload() async {
-    await _cleanupGemmaDownloadState();
-
     _state = ModelDownloadState.downloading;
     _progress = 0;
     _errorMessage = null;
     _phaseLabel = 'Downloading Gemma model';
     _activeModelLabel = 'Gemma multilingual model';
     notifyListeners();
+
+    debugPrint('[LillySetup] Starting in-app stream download for ${ModelSetupConstants.modelUrl}');
 
     final taskId = await _modelDownloadManager.startDownload(
       accessToken: _accessToken,
@@ -283,20 +271,12 @@ class ModelSetupController extends ChangeNotifier {
 
     _taskId = taskId;
     await _storageService.saveTaskId(taskId);
+    debugPrint('[LillySetup] In-app download started with taskId=$taskId');
   }
 
   Future<List<VoiceLanguage>> _loadRequiredVoiceLanguages() async {
     final selectedCodes = await _settingsService.getVoiceLanguageCodes();
     return selectedCodes.map(VoiceLanguage.fromCode).toList();
-  }
-
-  Future<void> _cleanupGemmaDownloadState() async {
-    await _modelDownloadManager.removeAllModelTasks();
-    await _storageService.clearTaskId();
-    await _storageService.markCompleted(false);
-    _taskId = null;
-    _progress = 0;
-    await _modelFileService.deleteAllModelArtifacts();
   }
 
   void _completeSetup() {
@@ -314,9 +294,17 @@ class ModelSetupController extends ChangeNotifier {
     DownloadTaskStatus status,
     int progress,
   ) async {
-    if (_taskId != id) return;
+    if (_taskId != null && _taskId != id) {
+      debugPrint('[LillySetup] Ignoring event for stale task $id');
+      return;
+    }
 
+    _taskId ??= id;
     _progress = progress / 100.0;
+
+    debugPrint(
+      '[LillySetup] Download event: taskId=$id status=$status progress=$progress',
+    );
 
     switch (status) {
       case DownloadTaskStatus.running:
@@ -325,17 +313,17 @@ class ModelSetupController extends ChangeNotifier {
         _phaseLabel = 'Downloading Gemma model';
         _activeModelLabel = ModelSetupConstants.modelFileName;
         break;
+
       case DownloadTaskStatus.complete:
-        final gemmaValid = await _modelFileService.hasValidModelFile(strict: true);
         await _storageService.clearTaskId();
         _taskId = null;
 
+        final gemmaValid = await _modelFileService.hasValidModelFile(strict: true);
         if (!gemmaValid) {
-          await _cleanupGemmaDownloadState();
           _state = ModelDownloadState.error;
           _phaseLabel = 'Gemma validation failed';
           _errorMessage =
-              'Gemma download completed, but the model file is invalid.';
+              'Gemma download completed, but the model file is invalid. Delete the model and retry.';
           notifyListeners();
           return;
         }
@@ -343,23 +331,30 @@ class ModelSetupController extends ChangeNotifier {
         _completeSetup();
         notifyListeners();
         return;
+
       case DownloadTaskStatus.failed:
-        await _cleanupGemmaDownloadState();
+        await _storageService.clearTaskId();
+        _taskId = null;
         _state = ModelDownloadState.error;
         _phaseLabel = 'Gemma download failed';
-        _errorMessage = 'Gemma download failed. Please start again.';
+        _errorMessage =
+            'Gemma download failed during in-app streaming. Check logcat for [LillySetup].';
         break;
+
       case DownloadTaskStatus.paused:
-        await _cleanupGemmaDownloadState();
         _state = ModelDownloadState.error;
-        _phaseLabel = 'Gemma download interrupted';
-        _errorMessage = 'Gemma download was interrupted. Please start again.';
+        _phaseLabel = 'Gemma download paused';
+        _errorMessage = 'Gemma download paused unexpectedly.';
         break;
+
       case DownloadTaskStatus.canceled:
-        await _cleanupGemmaDownloadState();
+        await _storageService.clearTaskId();
+        _taskId = null;
         _state = ModelDownloadState.needsDownload;
         _phaseLabel = 'Setup required';
+        _errorMessage = 'Gemma download was canceled.';
         break;
+
       case DownloadTaskStatus.undefined:
         break;
     }

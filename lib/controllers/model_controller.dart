@@ -7,9 +7,8 @@ import '../services/model_service.dart';
 import '../services/native_model_service.dart';
 
 class ModelController extends ChangeNotifier {
-  ModelController({
-    ModelService? modelService,
-  }) : _modelService = modelService ?? NativeModelService();
+  ModelController({ModelService? modelService})
+    : _modelService = modelService ?? NativeModelService();
 
   final ModelService _modelService;
 
@@ -25,13 +24,29 @@ class ModelController extends ChangeNotifier {
   bool get hasError => _status == ModelStatus.error;
   bool get isLoading => _status == ModelStatus.loading;
 
+  Future<void>? _initFuture;
+
   Future<void> initialize() async {
-    if (_status == ModelStatus.loading) return;
+    if (_status == ModelStatus.ready) return;
+    
+    if (_initFuture != null) {
+      await _initFuture;
+      return;
+    }
 
     _errorMessage = null;
     _status = ModelStatus.loading;
     notifyListeners();
 
+    _initFuture = _doInitialize();
+    try {
+      await _initFuture;
+    } finally {
+      _initFuture = null;
+    }
+  }
+
+  Future<void> _doInitialize() async {
     try {
       await _modelService.initialize();
       _status = await _modelService.getStatus();
@@ -88,5 +103,19 @@ class ModelController extends ChangeNotifier {
     await _modelService.dispose();
     _status = ModelStatus.uninitialized;
     notifyListeners();
+  }
+
+  Future<void> releaseModelMemory() async {
+    // Dispose the model to free memory when app pauses
+    await _modelService.dispose();
+    _status = ModelStatus.uninitialized;
+    notifyListeners();
+  }
+
+  Future<void> reinitializeIfNeeded() async {
+    // Reinitialize the model if needed when app resumes
+    if (_status == ModelStatus.uninitialized) {
+      await initialize();
+    }
   }
 }

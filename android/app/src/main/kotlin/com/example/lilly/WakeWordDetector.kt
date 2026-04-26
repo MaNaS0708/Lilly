@@ -74,9 +74,19 @@ class WakeWordDetector(
             throw IllegalStateException("Failed to create wake-word stream.")
         }
 
-        audioRecord = createAudioRecord()
-        audioRecord!!.startRecording()
+        val record = createAudioRecord()
+        if (record.state != AudioRecord.STATE_INITIALIZED) {
+            record.release()
+            throw IllegalStateException("Wake-word microphone could not be initialized.")
+        }
 
+        record.startRecording()
+        if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+            record.release()
+            throw IllegalStateException("Wake-word microphone is busy or unavailable.")
+        }
+
+        audioRecord = record
         isRunning = true
         onStatusChanged("Listening for \"${WakeWordConstants.wakePhraseLabel}\"")
 
@@ -91,22 +101,27 @@ class WakeWordDetector(
 
     fun stop() {
         isRunning = false
-        workerThread?.join(500)
+
+        val localRecord = audioRecord
+        audioRecord = null
+
+        localRecord?.let {
+            try {
+                it.stop()
+            } catch (_: Exception) {
+            }
+        }
+
+        workerThread?.join(1000)
+        workerThread = null
+
+        localRecord?.release()
 
         stream?.release()
         stream = null
 
         keywordSpotter?.release()
         keywordSpotter = null
-
-        audioRecord?.let {
-            try {
-                it.stop()
-            } catch (_: Exception) {
-            }
-            it.release()
-        }
-        audioRecord = null
     }
 
     private fun processLoop() {
@@ -121,6 +136,9 @@ class WakeWordDetector(
         while (isRunning) {
             val read = localRecord.read(pcmBuffer, 0, pcmBuffer.size)
             if (read <= 0) {
+                if (!isRunning) {
+                    break
+                }
                 continue
             }
 
@@ -130,7 +148,7 @@ class WakeWordDetector(
 
             localStream.acceptWaveform(samples, WakeWordConstants.sampleRate)
 
-            while (localSpotter.isReady(localStream)) {
+            while (isRunning && localSpotter.isReady(localStream)) {
                 localSpotter.decode(localStream)
                 val detected = localSpotter.getResult(localStream).keyword
 

@@ -42,4 +42,5 @@ dependencies {
     implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
     implementation("com.github.k2-fsa:sherpa-onnx:v1.12.39")
     implementation("org.apache.commons:commons-compress:1.28.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 }

@@ -39,6 +39,15 @@ class MainActivity : FlutterActivity() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val modelExecutor = Executors.newSingleThreadExecutor()
+    private val maxModelTokens = 1024
+    private val maxModelImages = 1
+
+    private data class BackendPlan(
+        val name: String,
+        val backend: Backend,
+        val visionBackend: Backend?,
+        val audioBackend: Backend?,
+    )
 
     private var engine: Engine? = null
     private var modelReady = false
@@ -121,9 +130,9 @@ class MainActivity : FlutterActivity() {
                                 "isRunning" to LillyTriggerService.isRunning,
                                 "autostartEnabled" to preferences.isAutostartEnabled(),
                                 "notes" to if (wakeWordReady) {
-                                    "Say \"Hey Lilly\" to open voice chat. Lilly listens from the foreground trigger service and can still be opened from the notification."
+                                    "Say \"Hey Lilly\" to open Lilly directly in voice chat. While voice chat is active, the wake-word microphone is paused automatically and resumes when voice chat stops."
                                 } else {
-                                    "Say \"Hey Lilly\" to open voice chat. The first time you enable the trigger, Lilly downloads the wake-word model automatically and then starts listening."
+                                    "Say \"Hey Lilly\" to open Lilly directly in voice chat. The first time you enable the trigger, Lilly downloads the wake-word model automatically and then starts listening."
                                 },
                             )
                         )
@@ -188,8 +197,10 @@ class MainActivity : FlutterActivity() {
 
                     "pauseTriggerForVoiceChat" -> {
                         try {
-                            val intent = Intent(this, LillyTriggerService::class.java)
-                            stopService(intent)
+                            val intent = Intent(this, LillyTriggerService::class.java).apply {
+                                action = LillyTriggerService.ACTION_PAUSE_FOR_VOICE_CHAT
+                            }
+                            ContextCompat.startForegroundService(this, intent)
                             result.success(mapOf("success" to true))
                         } catch (e: Exception) {
                             result.success(
@@ -203,7 +214,9 @@ class MainActivity : FlutterActivity() {
 
                     "resumeTriggerAfterVoiceChat" -> {
                         try {
-                            val intent = Intent(this, LillyTriggerService::class.java)
+                            val intent = Intent(this, LillyTriggerService::class.java).apply {
+                                action = LillyTriggerService.ACTION_RESUME_AFTER_VOICE_CHAT
+                            }
                             ContextCompat.startForegroundService(this, intent)
                             result.success(mapOf("success" to true))
                         } catch (e: Exception) {
@@ -291,6 +304,8 @@ class MainActivity : FlutterActivity() {
             return
         }
 
+        val selectedPlans = backendPlansForModel(file)
+
         if (modelReady && modelPath == path && engine != null) {
             result.success(
                 mapOf(
@@ -314,7 +329,7 @@ class MainActivity : FlutterActivity() {
                 closeEngine()
                 Engine.setNativeMinLogSeverity(LogSeverity.ERROR)
 
-                val initialized = createEngine(path)
+                val initialized = createEngine(path, selectedPlans)
                 engine = initialized.first
                 activeBackend = initialized.second
 
@@ -336,11 +351,7 @@ class MainActivity : FlutterActivity() {
                 modelLoading = false
                 modelPath = null
                 activeBackend = "failed"
-                modelError = buildString {
-                    append(e.message ?: "Failed to initialize LiteRT-LM engine.")
-                    append(" ")
-                    append(deviceDiagnostics())
-                }.trim()
+                modelError = buildInitializationErrorMessage(e, selectedPlans)
 
                 postResult(
                     result,
@@ -364,35 +375,137 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun createEngine(path: String): Pair<Engine, String> {
+    private fun createEngine(
+        path: String,
+        plans: List<BackendPlan>,
+    ): Pair<Engine, String> {
         val errors = mutableListOf<String>()
 
-        val attempts = listOf(
-            "cpu" to Backend.CPU(),
-            "gpu" to Backend.GPU(),
-        )
-
-        for ((name, backend) in attempts) {
+        for (plan in plans) {
             try {
                 val newEngine = Engine(
                     EngineConfig(
                         modelPath = path,
-                        backend = backend,
-                        visionBackend = backend,
-                        audioBackend = backend,
-                        maxNumTokens = 1024,
+                        backend = plan.backend,
+                        visionBackend = plan.visionBackend,
+                        audioBackend = plan.audioBackend,
+                        maxNumTokens = maxModelTokens,
+                        maxNumImages = maxModelImages,
+                        cacheDir = cacheDir.absolutePath,
                     )
                 )
+
                 newEngine.initialize()
-                return newEngine to name
+                return newEngine to plan.name
             } catch (e: Exception) {
-                errors += "$name: ${e.message ?: e.javaClass.simpleName}"
+                errors += "${plan.name}: ${e.message ?: e.javaClass.simpleName}"
             }
         }
 
         throw Exception(
             "Unable to initialize LiteRT-LM backend. ${errors.joinToString(" | ")}"
         )
+    }
+
+    private fun backendPlansForModel(file: File): List<BackendPlan> {
+        val cpu = Backend.CPU(4)
+        val gpu = Backend.GPU()
+        val npu = Backend.NPU(applicationInfo.nativeLibraryDir)
+        val fileName = file.name.lowercase()
+
+        val tensorE4bPlans = listOf(
+            BackendPlan(
+                name = "npu-core-vision-cpu",
+                backend = npu,
+                visionBackend = cpu,
+                audioBackend = null,
+            ),
+            BackendPlan(
+                name = "cpu-safe",
+                backend = cpu,
+                visionBackend = cpu,
+                audioBackend = null,
+            ),
+        )
+
+        val genericE4bPlans = listOf(
+            BackendPlan(
+                name = "gpu-core-vision-cpu",
+                backend = gpu,
+                visionBackend = cpu,
+                audioBackend = null,
+            ),
+            BackendPlan(
+                name = "cpu-safe",
+                backend = cpu,
+                visionBackend = cpu,
+                audioBackend = null,
+            ),
+        )
+
+        val smallerModelPlans = listOf(
+            BackendPlan(
+                name = "cpu-safe",
+                backend = cpu,
+                visionBackend = cpu,
+                audioBackend = null,
+            ),
+            BackendPlan(
+                name = "gpu-core-vision-cpu",
+                backend = gpu,
+                visionBackend = cpu,
+                audioBackend = null,
+            ),
+        )
+
+        return when {
+            fileName.contains("e4b") && isTensorPixel() -> tensorE4bPlans
+            fileName.contains("e4b") -> genericE4bPlans
+            else -> smallerModelPlans
+        }
+    }
+
+    private fun recoveryBackendPlans(
+        file: File,
+        currentBackend: String,
+    ): List<BackendPlan> {
+        val plans = backendPlansForModel(file)
+
+        return when {
+            currentBackend.startsWith("npu") ->
+                plans.filterNot { it.name.startsWith("npu") } +
+                    plans.filter { it.name.startsWith("npu") }
+            currentBackend.startsWith("gpu") ->
+                plans.filterNot { it.name.startsWith("gpu") } +
+                    plans.filter { it.name.startsWith("gpu") }
+            currentBackend.startsWith("cpu") ->
+                plans.filterNot { it.name.startsWith("cpu") } +
+                    plans.filter { it.name.startsWith("cpu") }
+            else -> plans
+        }
+    }
+
+    private fun isTensorPixel(): Boolean {
+        val manufacturer = Build.MANUFACTURER.lowercase()
+        val brand = Build.BRAND.lowercase()
+        val model = Build.MODEL.lowercase()
+        val hardware = Build.HARDWARE.lowercase()
+        val socManufacturer = if (Build.VERSION.SDK_INT >= 31) {
+            Build.SOC_MANUFACTURER.lowercase()
+        } else {
+            ""
+        }
+
+        val looksLikePixelTensor =
+            (manufacturer == "google" || brand == "google") &&
+                (model.contains("pixel 6") ||
+                    model.contains("pixel 7") ||
+                    model.contains("pixel 8") ||
+                    model.contains("pixel 9"))
+
+        return looksLikePixelTensor ||
+            hardware.contains("tensor") ||
+            socManufacturer.contains("google")
     }
 
     private fun generateResponse(
@@ -424,18 +537,25 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        if (!imagePath.isNullOrBlank()) {
-            result.success(
-                mapOf(
-                    "success" to false,
-                    "text" to "",
-                    "errorMessage" to "Gemma 4 text chat is implemented first. Image input is not wired yet on this Android path.",
+        val normalizedImagePath = imagePath?.trim().orEmpty().ifEmpty { null }
+        if (normalizedImagePath != null) {
+            val imageFile = File(normalizedImagePath)
+            if (!imageFile.exists()) {
+                result.success(
+                    mapOf(
+                        "success" to false,
+                        "text" to "",
+                        "errorMessage" to "Selected image file was not found.",
+                    )
                 )
-            )
-            return
+                return
+            }
         }
 
-        val trimmedPrompt = prompt.trim()
+        val trimmedPrompt = normalizePrompt(
+            prompt = prompt,
+            hasImage = normalizedImagePath != null,
+        )
         if (trimmedPrompt.isEmpty()) {
             result.success(
                 mapOf(
@@ -447,32 +567,16 @@ class MainActivity : FlutterActivity() {
             return
         }
 
+        val initialMessages = buildInitialMessages(history)
+
         modelExecutor.execute {
             try {
-                val conversationConfig = ConversationConfig(
-                    systemInstruction = Contents.of(
-                        """
-                        You are Lilly.
-                        Be warm, clear, and brief.
-                        Use short natural sentences unless the user asks for detail.
-                        Do not use emojis.
-                        If the user gives OCR text from the camera, rely on that text only and be honest when unsure.
-                        """.trimIndent()
-                    ),
-                    initialMessages = buildInitialMessages(history),
-                    samplerConfig = SamplerConfig(
-                        topK = 24,
-                        topP = 0.90,
-                        temperature = 0.45,
-                        seed = 1,
-                    ),
+                val responseText = runInference(
+                    activeEngine = activeEngine,
+                    prompt = trimmedPrompt,
+                    imagePath = normalizedImagePath,
+                    initialMessages = initialMessages,
                 )
-
-                val response = activeEngine.createConversation(conversationConfig).use { conversation ->
-                    conversation.sendMessage(trimmedPrompt)
-                }
-
-                val responseText = extractText(response)
 
                 postResult(
                     result,
@@ -483,12 +587,34 @@ class MainActivity : FlutterActivity() {
                     )
                 )
             } catch (e: Exception) {
+                val recoveredText = retryInferenceIfNeeded(
+                    cause = e,
+                    prompt = trimmedPrompt,
+                    imagePath = normalizedImagePath,
+                    initialMessages = initialMessages,
+                )
+
+                if (recoveredText != null) {
+                    postResult(
+                        result,
+                        mapOf(
+                            "success" to true,
+                            "text" to recoveredText,
+                            "errorMessage" to null,
+                        )
+                    )
+                    return@execute
+                }
+
+                val errorMessage = buildInferenceErrorMessage(e)
+                modelError = errorMessage
+
                 postResult(
                     result,
                     mapOf(
                         "success" to false,
                         "text" to "",
-                        "errorMessage" to (e.message ?: "Gemma 4 inference failed on Android."),
+                        "errorMessage" to errorMessage,
                     )
                 )
             }
@@ -513,6 +639,132 @@ class MainActivity : FlutterActivity() {
         }
 
         return messages
+    }
+
+    private fun normalizePrompt(
+        prompt: String,
+        hasImage: Boolean,
+    ): String {
+        val trimmed = prompt.trim()
+        if (trimmed.isEmpty() && hasImage) {
+            return "Describe this image briefly. If there is readable text, include the important parts."
+        }
+
+        val maxPromptChars = if (hasImage) 900 else 1400
+        if (trimmed.length <= maxPromptChars) {
+            return trimmed
+        }
+
+        return trimmed.substring(0, maxPromptChars)
+    }
+
+    private fun runInference(
+        activeEngine: Engine,
+        prompt: String,
+        imagePath: String?,
+        initialMessages: List<Message>,
+    ): String {
+        val conversationConfig = ConversationConfig(
+            systemInstruction = Contents.of(
+                """
+                You are Lilly.
+                Be warm, clear, and brief.
+                Use short natural sentences unless the user asks for detail.
+                Do not use emojis.
+                If the user gives OCR text from the camera, rely on that text only and be honest when unsure.
+                """.trimIndent()
+            ),
+            initialMessages = initialMessages,
+            samplerConfig = SamplerConfig(
+                topK = 24,
+                topP = 0.90,
+                temperature = 0.45,
+                seed = 1,
+            ),
+        )
+
+        val response = activeEngine.createConversation(conversationConfig).use { conversation ->
+            if (imagePath.isNullOrBlank()) {
+                conversation.sendMessage(prompt)
+            } else {
+                conversation.sendMessage(
+                    Contents.of(
+                        Content.Text(prompt),
+                        Content.ImageFile(File(imagePath).absolutePath),
+                    )
+                )
+            }
+        }
+
+        return extractText(response)
+    }
+
+    private fun shouldRetryInference(cause: Exception): Boolean {
+        val message = cause.message?.lowercase().orEmpty()
+        return message.contains("nativesendmessage") ||
+            message.contains("failed to invoke the compiled model") ||
+            message.contains("compiled_model_executor")
+    }
+
+    private fun retryInferenceIfNeeded(
+        cause: Exception,
+        prompt: String,
+        imagePath: String?,
+        initialMessages: List<Message>,
+    ): String? {
+        val path = modelPath ?: return null
+        if (!shouldRetryInference(cause)) {
+            return null
+        }
+
+        return try {
+            closeEngine()
+            val rebuilt = createEngine(path, recoveryBackendPlans(File(path), activeBackend))
+
+            engine = rebuilt.first
+            activeBackend = rebuilt.second
+            modelReady = true
+            modelLoading = false
+            modelError = null
+
+            runInference(
+                activeEngine = rebuilt.first,
+                prompt = prompt,
+                imagePath = imagePath,
+                initialMessages = initialMessages,
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun buildInitializationErrorMessage(
+        cause: Exception,
+        selectedPlans: List<BackendPlan>,
+    ): String {
+        return buildString {
+            append(cause.message ?: "Failed to initialize LiteRT-LM engine.")
+            append(" ")
+            append(deviceDiagnostics())
+            append(" ")
+            append("[plans=")
+            append(selectedPlans.joinToString(separator = ",") { plan -> plan.name })
+            append("]")
+            append(" ")
+            append("[device=")
+            append(Build.MANUFACTURER)
+            append("/")
+            append(Build.MODEL)
+            append("]")
+        }.trim()
+    }
+
+    private fun buildInferenceErrorMessage(cause: Exception): String {
+        return buildString {
+            append(cause.message ?: "Gemma 4 inference failed on Android.")
+            append(" ")
+            append(deviceDiagnostics())
+        }.trim()
     }
 
     private fun extractText(message: Message): String {

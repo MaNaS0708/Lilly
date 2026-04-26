@@ -12,17 +12,24 @@ class MessageList extends StatelessWidget {
     required this.scrollController,
     required this.isLoading,
     required this.loadingLabel,
+    this.isModelLoading = false,
+    this.modelStatusLabel,
   });
 
   final List<ChatMessage> messages;
   final ScrollController scrollController;
   final bool isLoading;
   final String loadingLabel;
+  final bool isModelLoading;
+  final String? modelStatusLabel;
 
   @override
   Widget build(BuildContext context) {
     if (messages.isEmpty && !isLoading) {
-      return const EmptyChatState();
+      return EmptyChatState(
+        isModelLoading: isModelLoading,
+        modelStatusLabel: modelStatusLabel,
+      );
     }
 
     return ListView.builder(

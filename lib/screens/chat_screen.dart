@@ -7,9 +7,11 @@ import 'package:flutter/services.dart';
 import '../controllers/chat_controller.dart';
 import '../controllers/conversation_list_controller.dart';
 import '../controllers/model_controller.dart';
+import '../models/chat_conversation.dart';
 import '../services/image_picker_service.dart';
 import '../services/settings_service.dart';
 import '../services/trigger_service.dart';
+import '../services/visual_intent_service.dart';
 import '../services/voice_service.dart';
 import '../widgets/confirm_action_dialog.dart';
 import '../widgets/conversation_drawer.dart';
@@ -47,6 +49,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _isVoiceSpeaking = false;
   bool _voiceConversationMode = false;
   bool _pausedTriggerForVoiceChat = false;
+  bool _stoppingVoiceChat = false;
+  bool _voiceSendInFlight = false;
+  bool _cameraCaptureInProgress = false;
+
 
   @override
   void initState() {
@@ -63,16 +69,41 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_consumePendingTriggerAction());
+      return;
+    }
+
+    if (_cameraCaptureInProgress) {
+      return;
+    }
+
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      if (_voiceConversationMode ||
+          _isVoiceListening ||
+          _isVoicePreparing ||
+          _isVoiceSpeaking) {
+        unawaited(_stopVoiceChat());
+      }
     }
   }
+
 
   Future<void> _bootstrap() async {
     _enableImageInput = await _settingsService.getEnableImageInput();
     await _conversationListController.load();
 
-    final freshConversation =
-        await _conversationListController.createNewConversation();
-    _chatController.attachConversation(freshConversation);
+    final selected = _conversationListController.selectedConversation;
+    late final ChatConversation initialConversation;
+
+    if (selected == null || selected.messages.isNotEmpty) {
+      initialConversation =
+          await _conversationListController.createNewConversation();
+    } else {
+      initialConversation = selected;
+    }
+
+    _chatController.attachConversation(initialConversation);
 
     await _modelController.initialize();
     await _consumePendingTriggerAction();
@@ -80,6 +111,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (mounted) {
       setState(() {});
     }
+    
   }
 
   Future<void> _vibrateInputStart() async {
@@ -159,24 +191,39 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           }
           break;
         case 'final':
-          await _vibrateInputDone();
-          setState(() {
-            _isVoiceListening = false;
-          });
-
           final transcript = (event.text ?? '').trim();
-          if (transcript.isEmpty) return;
-
-          if (_shouldCaptureSceneText(transcript)) {
-            await _captureAndProcessVisibleText(transcript);
+          if (transcript.isEmpty || _voiceSendInFlight) {
             return;
           }
 
-          _textController.text = transcript;
-          _textController.selection = TextSelection.fromPosition(
-            TextPosition(offset: _textController.text.length),
-          );
-          await _sendMessage(speakReply: _voiceConversationMode);
+          _voiceSendInFlight = true;
+          await _vibrateInputDone();
+          await _voiceService.stopListening();
+
+          if (!mounted) {
+            _voiceSendInFlight = false;
+            return;
+          }
+
+          setState(() {
+            _isVoiceListening = false;
+            _isVoicePreparing = false;
+          });
+
+          try {
+            if (_shouldCaptureSceneText(transcript)) {
+              await _captureAndProcessVisibleText(transcript);
+              return;
+            }
+
+            _textController.text = transcript;
+            _textController.selection = TextSelection.fromPosition(
+              TextPosition(offset: _textController.text.length),
+            );
+            await _sendMessage(speakReply: _voiceConversationMode);
+          } finally {
+            _voiceSendInFlight = false;
+          }
           break;
         case 'stopped':
           setState(() {
@@ -197,6 +244,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             _isVoiceSpeaking = false;
           });
           if (_voiceConversationMode &&
+              !_stoppingVoiceChat &&
               !_isVoiceListening &&
               !_isVoicePreparing &&
               !_modelController.isGenerating) {
@@ -206,6 +254,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           break;
         case 'error':
           final shouldResumeTrigger = _voiceConversationMode;
+          _voiceSendInFlight = false;
           setState(() {
             _isVoiceListening = false;
             _isVoicePreparing = false;
@@ -222,40 +271,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   bool _shouldCaptureSceneText(String transcript) {
-    final normalized = transcript.toLowerCase();
-    return normalized.contains("what's in front of me") ||
-        normalized.contains('what is in front of me') ||
-        normalized.contains("read what's in front of me") ||
-        normalized.contains('read what is in front of me') ||
-        normalized.contains("what's written in front of me") ||
-        normalized.contains('what is written in front of me') ||
-        normalized.contains('read the text in front of me') ||
-        normalized.contains('scan the text in front of me') ||
-        normalized.contains('what do you see in front of me') ||
-        normalized.contains('tell me what is in front of me') ||
-        normalized.contains("tell me what's in front of me") ||
-        normalized.contains('see what is in front of me') ||
-        normalized.contains("see what's in front of me") ||
-        normalized.contains('what is this') ||
-        normalized.contains("what's this") ||
-        normalized.contains('what is that') ||
-        normalized.contains("what's that") ||
-        normalized.contains('tell me what this is') ||
-        normalized.contains('tell me what that is') ||
-        normalized.contains('what do you see') ||
-        normalized.contains('can you see this');
+    return VisualIntentService.shouldAutoCaptureForPrompt(transcript);
   }
 
-  Future<void> _captureAndProcessVisibleText(String transcript) async {
+
+    Future<void> _captureAndProcessVisibleText(String transcript) async {
     if (!_enableImageInput) {
       _chatController.showError('Image input is disabled in settings.');
       return;
     }
 
+    _cameraCaptureInProgress = true;
+
     try {
       final image = await Navigator.of(context).push<File>(
         MaterialPageRoute(
-          builder: (_) => const AutoCaptureCameraScreen(),
+          builder: (_) => AutoCaptureCameraScreen(
+            onImageCaptured: (_) {},
+          ),
           fullscreenDialog: true,
         ),
       );
@@ -274,8 +307,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } catch (e) {
       _chatController.showError(e.toString());
       await _restartVoiceConversationLoop();
+    } finally {
+      _cameraCaptureInProgress = false;
     }
   }
+
 
   Future<void> _consumePendingTriggerAction() async {
     final action = await _triggerService.consumePendingLaunchAction();
@@ -289,23 +325,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           await _startVoiceConversation();
           break;
         case 'open_app':
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Lilly opened from the assistant trigger.'),
-              duration: Duration(milliseconds: 1200),
-            ),
-          );
           break;
       }
     });
   }
 
   Future<void> _startVoiceConversation() async {
+    if (_voiceConversationMode ||
+        _isVoicePreparing ||
+        _isVoiceListening ||
+        _voiceSendInFlight) {
+      return;
+    }
+
     await _pauseWakeWordForVoiceChat();
 
     if (!mounted) return;
     setState(() {
       _voiceConversationMode = true;
+      _stoppingVoiceChat = false;
     });
 
     final started = await _startVoiceChat();
@@ -318,7 +356,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<bool> _startVoiceChat() async {
-    if (_isVoicePreparing || _isVoiceListening) return true;
+    if (_isVoicePreparing || _isVoiceListening || _voiceSendInFlight) {
+      return true;
+    }
 
     setState(() {
       _isVoicePreparing = true;
@@ -350,16 +390,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _stopVoiceChat() async {
-    await _voiceService.stopListening();
+    if (_stoppingVoiceChat) return;
+
+    _stoppingVoiceChat = true;
+    _voiceSendInFlight = false;
+    if (mounted) {
+      setState(() {
+        _isVoiceListening = false;
+        _isVoicePreparing = false;
+        _isVoiceSpeaking = false;
+        _voiceConversationMode = false;
+      });
+    }
+
+    await _voiceService.stopListening(clearBufferedText: true);
     await _voiceService.stopSpeaking();
-    if (!mounted) return;
-    setState(() {
-      _isVoiceListening = false;
-      _isVoicePreparing = false;
-      _isVoiceSpeaking = false;
-      _voiceConversationMode = false;
-    });
     await _resumeWakeWordAfterVoiceChat();
+    _stoppingVoiceChat = false;
   }
 
   @override
@@ -454,12 +501,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _sendMessage({bool speakReply = false}) async {
+    Future<bool> _sendMessage({bool speakReply = false}) async {
     final text = _textController.text.trim();
     final hasImage = _chatController.selectedImage != null;
 
-    if (text.isEmpty && !hasImage) return;
-    if (_modelController.isGenerating || _modelController.isLoading) return;
+    if (text.isEmpty && !hasImage) return false;
+    if (_modelController.isGenerating || _modelController.isLoading) {
+      return false;
+    }
+
+    if (!hasImage && _shouldCaptureSceneText(text)) {
+      await _captureAndProcessVisibleText(text);
+      return true;
+    }
 
     final ready = await _modelController.ensureReady();
     if (!ready) {
@@ -467,30 +521,46 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _modelController.errorMessage ??
             'The local model could not be prepared on this device.',
       );
-      return;
+      if (_voiceConversationMode) {
+        await _stopVoiceChat();
+      }
+      return false;
     }
 
     await _vibrateInputDone();
     await _vibrateResponseStart();
 
     final updatedConversation = await _chatController.sendMessage(text);
-    if (updatedConversation != null) {
-      _textController.clear();
-      await _conversationListController.upsertConversation(updatedConversation);
-
-      final lastMessage = updatedConversation.messages.isEmpty
-          ? null
-          : updatedConversation.messages.last;
-
-      if (lastMessage != null && !lastMessage.isUser) {
-        await _vibrateResponseDone();
-      }
-
-      if (speakReply && lastMessage != null && !lastMessage.isUser) {
-        await _voiceService.speakReply(lastMessage.text);
-      }
+    if (updatedConversation == null) {
+      return false;
     }
+
+    _textController.clear();
+    await _conversationListController.upsertConversation(updatedConversation);
+
+    final lastMessage = updatedConversation.messages.isEmpty
+        ? null
+        : updatedConversation.messages.last;
+    final sendFailed = _chatController.errorMessage != null;
+
+    if (lastMessage != null && !lastMessage.isUser) {
+      await _vibrateResponseDone();
+    }
+
+    if (sendFailed) {
+      if (_voiceConversationMode) {
+        await _stopVoiceChat();
+      }
+      return false;
+    }
+
+    if (speakReply && lastMessage != null && !lastMessage.isUser) {
+      await _voiceService.speakReply(lastMessage.text);
+    }
+
+    return true;
   }
+
 
   Future<void> _createNewChat() async {
     final conversation =
@@ -582,7 +652,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ]),
       builder: (context, _) {
         final activeConversation = _chatController.conversation;
-        final isBusy = _chatController.isSending ||
+        final isBusy =
+            _chatController.isSending ||
             _modelController.isLoading ||
             _isVoicePreparing ||
             _isVoiceListening ||
@@ -634,7 +705,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ),
               actions: [
                 IconButton(
-                  onPressed: (_isVoiceListening ||
+                  onPressed:
+                      (_isVoiceListening ||
                           _isVoicePreparing ||
                           _isVoiceSpeaking ||
                           _voiceConversationMode)
@@ -668,6 +740,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     scrollController: _chatController.scrollController,
                     isLoading: isBusy,
                     loadingLabel: _loadingLabel(),
+                    isModelLoading: _modelController.isLoading,
+                    modelStatusLabel: _modelController.isLoading
+                        ? 'Loading Lilly on your device...'
+                        : null,
                   ),
                 ),
                 MessageInputBar(

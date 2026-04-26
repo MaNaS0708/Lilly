@@ -37,9 +37,8 @@ class SettingsService {
         .toList();
 
     if (valid.isEmpty) {
-      return [VoiceLanguage.english.code];
+      return const <String>[];
     }
-
 
     return <String>[valid.first];
   }

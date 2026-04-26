@@ -1,27 +1,11 @@
-import 'dart:isolate';
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
-import 'package:flutter_downloader/flutter_downloader.dart';
 
 import 'screens/chat_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/splash_screen.dart';
 
-@pragma('vm:entry-point')
-void downloadCallback(String id, int status, int progress) {
-  final SendPort? send = IsolateNameServer.lookupPortByName(
-    'lilly_downloader_send_port',
-  );
-  send?.send([id, status, progress]);
-}
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
-  FlutterDownloader.registerCallback(downloadCallback);
-
   runApp(const LillyApp());
 }
 

@@ -50,8 +50,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final enableImages = await _settingsService.getEnableImageInput();
     final showDebug = await _settingsService.getShowDebugInfo();
     final triggerEnabled = await _settingsService.getTriggerEnabled();
-    final voiceLanguageCode =
-        await _settingsService.getPrimaryVoiceLanguageCode();
+    final voiceLanguageCode = await _settingsService
+        .getPrimaryVoiceLanguageCode();
     final modelInfo = await _modelFileService.inspectModelFile(strict: true);
     final triggerCapabilities = await _triggerService.getCapabilities();
 
@@ -101,7 +101,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!shouldDelete) return;
 
     await _modelController?.shutdown();
-    await _modelFileService.deleteModelIfExists();
+    await _modelFileService.deleteAllModelArtifacts();
+
 
     if (!mounted) return;
 
@@ -220,9 +221,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return AnimatedBuilder(
@@ -232,13 +231,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final modelError = _modelController?.errorMessage;
         final modelInfo = _modelInfo;
         final trigger = _triggerCapabilities;
-        final selectedLabel =
-            VoiceLanguage.fromCode(_voiceLanguageCode).label;
+        final selectedLabel = VoiceLanguage.fromCode(_voiceLanguageCode).label;
 
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('Settings'),
-          ),
+          appBar: AppBar(title: const Text('Settings')),
           body: ListView(
             padding: const EdgeInsets.all(20),
             children: [
@@ -250,7 +246,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Save chats locally'),
-                      subtitle: const Text('Keep conversations on this device.'),
+                      subtitle: const Text(
+                        'Keep conversations on this device.',
+                      ),
                       value: _saveChatsLocally,
                       onChanged: (value) async {
                         setState(() => _saveChatsLocally = value);
@@ -261,22 +259,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Enable image input'),
-                      subtitle: const Text('Allow camera and gallery attachments.'),
+                      subtitle: const Text(
+                        'Allow camera and gallery attachments.',
+                      ),
                       value: _enableImageInput,
                       onChanged: (value) async {
                         setState(() => _enableImageInput = value);
                         await _settingsService.setEnableImageInput(value);
-                      },
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Show debug info'),
-                      subtitle: const Text('Show model and trigger diagnostics.'),
-                      value: _showDebugInfo,
-                      onChanged: (value) async {
-                        setState(() => _showDebugInfo = value);
-                        await _settingsService.setShowDebugInfo(value);
                       },
                     ),
                   ],
@@ -296,40 +285,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         color: Color(0xFF111827),
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     const Text(
-                      'Choose one language only. Lilly will listen and reply in this language.',
-                      style: TextStyle(
-                        color: Color(0xFF4B5563),
-                        height: 1.4,
-                      ),
+                      'Lilly will listen and reply in this language.',
+                      style: TextStyle(color: Color(0xFF4B5563), height: 1.4),
                     ),
                     const SizedBox(height: 12),
-                    Text(
-                      'Selected: $selectedLabel',
-                      style: const TextStyle(
-                        color: Color(0xFF6B7280),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ...VoiceLanguage.values.map((language) {
-                      return RadioListTile<String>(
-                        contentPadding: EdgeInsets.zero,
-                        activeColor: const Color(0xFFC88298),
-                        title: Text(language.label),
-                        subtitle: Text(
-                          'Lilly will listen and reply in ${language.label}.',
+                    DropdownButtonFormField<String>(
+                      value: _voiceLanguageCode,
+                      decoration: InputDecoration(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
                         ),
-                        value: language.code,
-                        groupValue: _voiceLanguageCode,
-                        onChanged: (value) {
-                          if (value != null) {
-                            _setVoiceLanguage(value);
-                          }
-                        },
-                      );
-                    }),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFE9CAD4),
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFE9CAD4),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFC88298),
+                            width: 1.5,
+                          ),
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFFFFFBF8),
+                      ),
+                      icon: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: Color(0xFF776470),
+                      ),
+                      items: VoiceLanguage.values.map((language) {
+                        return DropdownMenuItem<String>(
+                          value: language.code,
+                          child: Text(
+                            language.label,
+                            style: const TextStyle(
+                              color: Color(0xFF111827),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (value != null && value != _voiceLanguageCode) {
+                          _setVoiceLanguage(value);
+                        }
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -356,7 +368,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       _InfoRow(
                         title: 'Validation',
-                        value: modelInfo.isValid ? 'Valid' : 'Missing or invalid',
+                        value: modelInfo.isValid
+                            ? 'Valid'
+                            : 'Missing or invalid',
                       ),
                     ],
                     if (modelError != null && modelError.isNotEmpty)
@@ -374,17 +388,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         FilledButton.icon(
                           onPressed: _retryModelInit,
                           icon: const Icon(Icons.refresh_rounded),
-                          label: const Text('Retry init'),
+                          label: const Text('Reload Model'),
                         ),
                         OutlinedButton.icon(
                           onPressed: _refreshModelDetails,
                           icon: const Icon(Icons.sync_rounded),
-                          label: const Text('Refresh'),
+                          label: const Text('Check Status'),
                         ),
                         OutlinedButton.icon(
                           onPressed: _deleteLocalModel,
                           icon: const Icon(Icons.delete_outline_rounded),
-                          label: const Text('Delete model'),
+                          label: const Text('Delete Model'),
                         ),
                       ],
                     ),
@@ -432,7 +446,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     _InfoRow(
                       title: 'Trigger type',
-                      value: 'Wake word + notification',
+                      value: 'Wake word -> voice chat',
                     ),
                     const SizedBox(height: 8),
                     if (trigger != null && trigger.notes.isNotEmpty)
@@ -453,19 +467,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Keep the trigger active, then say “Hey Lilly” to open voice chat. On the first run, Lilly downloads the wake-word model automatically.',
-                      style: TextStyle(
-                        color: Color(0xFF4B5563),
-                        height: 1.4,
-                      ),
+                      'Keep the trigger active, then say “Hey Lilly” to open Lilly directly in voice chat. While voice chat is running, the wake-word microphone pauses automatically and resumes after voice chat stops.',
+                      style: TextStyle(color: Color(0xFF4B5563), height: 1.4),
                     ),
-                    if (_triggerBusy) ...[
+                   if (_triggerBusy) ...[
                       const SizedBox(height: 14),
                       const LinearProgressIndicator(),
                     ],
                   ],
                 ),
               ),
+              const SizedBox(height: 32),
+              Center(
+                child: GestureDetector(
+                  onLongPress: () async {
+                    setState(() => _showDebugInfo = !_showDebugInfo);
+                    await _settingsService.setShowDebugInfo(_showDebugInfo);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            _showDebugInfo
+                                ? 'Debug info enabled'
+                                : 'Debug info hidden',
+                          ),
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text(
+                    'Lilly v1.0',
+                    style: TextStyle(
+                      color: Color(0xFFAA9CA3),
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
             ],
           ),
         );
@@ -512,10 +552,7 @@ class _SettingsCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: child,
-      ),
+      child: Padding(padding: const EdgeInsets.all(18), child: child),
     );
   }
 }
@@ -533,24 +570,6 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final valueWidget = trailingColor == null
-        ? Text(
-            value,
-            textAlign: TextAlign.right,
-            style: const TextStyle(
-              color: Color(0xFF374151),
-              fontWeight: FontWeight.w600,
-            ),
-          )
-        : Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              color: trailingColor,
-              shape: BoxShape.circle,
-            ),
-          );
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -564,8 +583,27 @@ class _InfoRow extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          Flexible(child: valueWidget),
+          if (trailingColor != null) ...[
+            Container(
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: trailingColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ],
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: const TextStyle(
+                color: Color(0xFF111827),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
         ],
       ),
     );
