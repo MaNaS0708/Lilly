@@ -50,3 +50,12 @@ dependencies {
     implementation("org.apache.commons:commons-compress:1.28.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 }
+
+tasks.register<Copy>("renameReleaseApk") {
+    dependsOn("assembleRelease")
+    from(layout.buildDirectory.dir("outputs/flutter-apk"))
+    include("app-release.apk")
+    into(layout.buildDirectory.dir("outputs/flutter-apk"))
+    rename("app-release.apk", "lilly.apk")
+}
+
