@@ -8,11 +8,13 @@ import 'package:flutter/services.dart';
 class AutoCaptureCameraScreen extends StatefulWidget {
   final void Function(File imageFile) onImageCaptured;
   final Duration captureDelay;
+  final bool autoCaptureOnOpen;
 
   const AutoCaptureCameraScreen({
     super.key,
     required this.onImageCaptured,
     this.captureDelay = const Duration(milliseconds: 1500),
+    this.autoCaptureOnOpen = true,
   });
 
   @override
@@ -23,8 +25,10 @@ class AutoCaptureCameraScreen extends StatefulWidget {
 class _AutoCaptureCameraScreenState extends State<AutoCaptureCameraScreen>
     with WidgetsBindingObserver {
   CameraController? _controller;
+  Timer? _autoCaptureTimer;
   bool _capturing = false;
   bool _disposed = false;
+  bool _initializing = false;
   String? _errorMessage;
 
   @override
@@ -37,6 +41,7 @@ class _AutoCaptureCameraScreenState extends State<AutoCaptureCameraScreen>
   @override
   void dispose() {
     _disposed = true;
+    _autoCaptureTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
     super.dispose();
@@ -45,17 +50,34 @@ class _AutoCaptureCameraScreenState extends State<AutoCaptureCameraScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
+    if (controller == null) return;
 
-    if (state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      _autoCaptureTimer?.cancel();
+      _controller = null;
       controller.dispose();
-    } else if (state == AppLifecycleState.resumed) {
+      return;
+    }
+
+    if (state == AppLifecycleState.resumed) {
       _setupCamera();
     }
   }
 
   Future<void> _setupCamera() async {
+    if (_disposed || _initializing) return;
+    _initializing = true;
+
     try {
+      _autoCaptureTimer?.cancel();
+
+      final existing = _controller;
+      _controller = null;
+      if (existing != null) {
+        await existing.dispose();
+      }
+
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
         await _handleError('No camera found on this device.');
@@ -77,18 +99,27 @@ class _AutoCaptureCameraScreenState extends State<AutoCaptureCameraScreen>
       await controller.initialize();
 
       if (_disposed) {
-        controller.dispose();
+        await controller.dispose();
         return;
       }
 
       if (mounted) {
-        setState(() => _controller = controller);
+        setState(() {
+          _controller = controller;
+        });
+      } else {
+        _controller = controller;
       }
 
       HapticFeedback.mediumImpact();
-      Future.delayed(widget.captureDelay, _capturePhoto);
+
+      if (widget.autoCaptureOnOpen) {
+        _autoCaptureTimer = Timer(widget.captureDelay, _capturePhoto);
+      }
     } catch (e) {
       await _handleError('Could not open camera. $e');
+    } finally {
+      _initializing = false;
     }
   }
 
@@ -98,6 +129,7 @@ class _AutoCaptureCameraScreenState extends State<AutoCaptureCameraScreen>
     if (controller == null || !controller.value.isInitialized) return;
 
     _capturing = true;
+    _autoCaptureTimer?.cancel();
 
     try {
       final xFile = await controller.takePicture();
@@ -113,17 +145,25 @@ class _AutoCaptureCameraScreenState extends State<AutoCaptureCameraScreen>
           Navigator.of(context).pop(imageFile);
         }
       }
-    } catch (e) {
+    } catch (_) {
       await _handleError('Could not take photo. Tap to try again.');
       _capturing = false;
     }
   }
 
   Future<void> _handleError(String message) async {
+    _autoCaptureTimer?.cancel();
     HapticFeedback.vibrate();
     if (mounted) {
       setState(() => _errorMessage = message);
     }
+  }
+
+  String _helperText() {
+    if (widget.autoCaptureOnOpen) {
+      return 'Hold steady. Lilly will capture automatically, or tap the shutter now';
+    }
+    return 'Tap the shutter to capture';
   }
 
   @override
@@ -172,9 +212,10 @@ class _AutoCaptureCameraScreenState extends State<AutoCaptureCameraScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'Double-tap anywhere to capture',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  Text(
+                    _helperText(),
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 16),
                   GestureDetector(

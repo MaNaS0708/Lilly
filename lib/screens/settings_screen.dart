@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../config/app_meta.dart';
 import '../controllers/model_controller.dart';
 import '../models/model_status.dart';
 import '../models/trigger_capabilities.dart';
@@ -496,9 +497,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
                     }
                   },
-                  child: const Text(
-                    'Lilly v1.0',
-                    style: TextStyle(
+                  child: Text(
+                    AppMeta.appDisplayVersion,
+                    style: const TextStyle(
                       color: Color(0xFFAA9CA3),
                       fontSize: 12,
                     ),

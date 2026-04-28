@@ -2,7 +2,7 @@ name: lilly
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.0
 
 environment:
   sdk: ^3.11.4
@@ -40,4 +40,7 @@ flutter_launcher_icons:
   android: true
   ios: true
   image_path: assets/images/lilly_logo.png
+  adaptive_icon_background: "#FFF7F9"
+  adaptive_icon_foreground: assets/images/lilly_logo.png
   min_sdk_android: 24
+  remove_alpha_ios: true

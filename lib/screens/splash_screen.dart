@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config/app_meta.dart';
 import '../controllers/model_setup_controller.dart';
 import '../models/model_download_state.dart';
 import '../models/voice_language.dart';
@@ -172,6 +173,17 @@ class _SplashScreenState extends State<SplashScreen> {
                               fontSize: 30,
                               fontWeight: FontWeight.w800,
                               color: Color(0xFF473241),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            AppMeta.appVersionLabel,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
+                              color: Color(0xFFAA9CA3),
                             ),
                           ),
                           const SizedBox(height: 10),
@@ -348,7 +360,18 @@ class _SplashScreenState extends State<SplashScreen> {
                               fit: BoxFit.cover,
                             ),
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 20),
+                          const Text(
+                            AppMeta.appDisplayVersion,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
+                              color: Color(0xFFAA9CA3),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
                           Text(
                             controller.phaseLabel,
                             textAlign: TextAlign.center,

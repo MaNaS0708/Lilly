@@ -281,17 +281,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
 
-    _cameraCaptureInProgress = true;
-
     try {
-      final image = await Navigator.of(context).push<File>(
-        MaterialPageRoute(
-          builder: (_) => AutoCaptureCameraScreen(
-            onImageCaptured: (_) {},
-          ),
-          fullscreenDialog: true,
-        ),
-      );
+      final image = await _openInAppCamera(autoCaptureOnOpen: true);
 
       if (image == null) {
         await _restartVoiceConversationLoop();
@@ -307,8 +298,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     } catch (e) {
       _chatController.showError(e.toString());
       await _restartVoiceConversationLoop();
-    } finally {
-      _cameraCaptureInProgress = false;
     }
   }
 
@@ -425,6 +414,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  Future<File?> _openInAppCamera({
+    required bool autoCaptureOnOpen,
+  }) async {
+    _cameraCaptureInProgress = true;
+
+    try {
+      return await Navigator.of(context).push<File>(
+        MaterialPageRoute(
+          builder: (_) => AutoCaptureCameraScreen(
+            onImageCaptured: (_) {},
+            autoCaptureOnOpen: autoCaptureOnOpen,
+          ),
+          fullscreenDialog: true,
+        ),
+      );
+    } finally {
+      _cameraCaptureInProgress = false;
+    }
+  }
+
   Future<void> _pickFromCamera() async {
     if (!_enableImageInput) {
       _chatController.showError('Image input is disabled in settings.');
@@ -432,8 +441,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
 
     try {
-      final File? image = await ImagePickerService.pickFromCamera();
-      if (image == null) return;
+      final File? image = await _openInAppCamera(autoCaptureOnOpen: false);
+      if (!mounted || image == null) return;
       _chatController.setSelectedImage(image);
     } catch (e) {
       _chatController.showError(e.toString());
