@@ -185,6 +185,53 @@ Lilly’s design philosophy is simple: **access should remain available even whe
 
 ---
 
+## Performance and Device Requirements
+
+Lilly is powerful, but it is also demanding. That is an honest part of the project.
+
+The app can feel heavy on some devices for a few clear reasons:
+
+### The model is large
+Lilly uses **Gemma 4 E4B**, and the local model file is roughly **3.6 GB**. Loading a model of that size is very different from loading a normal app asset or a lightweight mobile feature.
+
+### Inference happens on the phone
+Lilly is not sending prompts to a remote server. The device itself has to:
+
+- load the model into memory
+- initialize the LiteRT-LM runtime
+- prepare text or image context
+- run the actual reasoning locally
+
+That privacy benefit comes with a real performance cost, especially on mid-range or older phones.
+
+### Multimodal tasks are heavier than text-only chat
+When Lilly is asked to describe a scene, inspect an object, or combine OCR with conversation, the workload becomes more expensive than plain text interaction.
+
+### Android system rules add lifecycle overhead
+Wake-word listening, microphone access, notifications, foreground services, and app lifecycle handling all need to operate within Android’s restrictions. That makes the app more complex than a standard single-screen assistant.
+
+### Device differences matter a lot
+Performance depends heavily on:
+
+- available RAM
+- storage speed
+- thermal limits
+- chipset and backend compatibility
+- how aggressively the device manages background apps
+
+Two Android phones can run the same build very differently.
+
+### What this means in practice
+
+- first-run setup can take time
+- initial model loading can feel slow
+- image-based tasks are heavier than text-only tasks
+- weaker devices may relaunch or struggle under memory pressure
+
+This is the tradeoff Lilly makes in order to stay private, local, and independent of cloud inference.
+
+---
+
 ## Impact and Vision
 
 The most meaningful assistive technologies are often not the loudest ones.
@@ -298,20 +345,6 @@ Lilly is meaningful today, but it is still early work. Being honest about that m
 - more diagnostic visibility for trigger and model lifecycle issues
 - more refined accessibility feedback patterns
 - investigation of an eventual iOS path once the native runtime story matures
-
----
-
-## Built for the Gemma 4 Good Hackathon
-
-Lilly was built as a submission for the **Gemma 4 Good Hackathon**, with a focus on **assistive technology**, **digital equity**, and **private AI that serves real human needs**.
-
-This project is grounded in a belief that AI is most powerful when it restores choice.
-
-Not just faster answers.  
-Not just a more polished demo.  
-But more independence, more confidence, and more privacy for people who deserve technology that meets them with respect.
-
-Lilly is our attempt to build that kind of technology.
 
 ---
 
