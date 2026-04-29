@@ -1,74 +1,67 @@
 # Lilly
 
 [![Version](https://img.shields.io/badge/version-v1.0.0-C88298)](https://github.com/MaNaS0708/Lilly/releases)
-[![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
+[![Gemma 4](https://img.shields.io/badge/Powered%20by-Gemma%204%20E4B-F97316)](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm)
+[![Runtime](https://img.shields.io/badge/Runtime-LiteRT--LM-7C3AED)](https://github.com/google-ai-edge/LiteRT-LM)
 [![Platform](https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white)](https://developer.android.com)
-[![Model](https://img.shields.io/badge/model-Gemma%204%20E4B-F97316)](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm)
+[![Built with Flutter](https://img.shields.io/badge/Built%20with-Flutter-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-**Lilly** is an Android-first, on-device voice assistant built with Flutter. It combines local **Gemma 4** inference through **LiteRT-LM**, wake-word detection with **Sherpa ONNX**, speech recognition, spoken replies, OCR-assisted vision, and image-aware chat into a private assistant experience that runs directly on the phone.
+**Lilly is a private, on-device voice assistant designed to empower visually impaired and blind users with greater independence, confidence, and privacy in everyday life.**
 
-Lilly is designed around a simple idea: the assistant should feel local, responsive, and personal, without depending on cloud inference for core interaction.
-
----
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Screenshots](#screenshots)
-- [Architecture](#architecture)
-- [Model Download](#model-download)
-- [Supported Voice Languages](#supported-voice-languages)
-- [How to Build APK](#how-to-build-apk)
-- [Permissions Required](#permissions-required)
-- [Platform Support](#platform-support)
-- [Limitations](#limitations)
-- [Roadmap](#roadmap)
-- [Project Structure](#project-structure)
-- [Development](#development)
-- [Contributing](#contributing)
-- [License](#license)
+Built on Android with **Flutter**, **native Kotlin**, **Gemma 4 (E4B)**, **LiteRT-LM**, and **Sherpa ONNX**, Lilly can listen, respond, describe what the camera sees, read visible text, and stay available through wake-word activation. Its core promise is simple: **the moments that matter most should not have to leave your phone to become accessible.**
 
 ---
 
-## Overview
+## About Lilly
 
-Lilly provides a local assistant workflow with these core capabilities:
+For many visually impaired people, access to the world is often delayed by friction that others barely notice: a label on a bottle, a sign at a station, a message on a screen, an unfamiliar object on a table, or a doorway in a new room.
 
-- On-device Gemma 4 chat
-- Voice conversation with speech-to-text and text-to-speech
-- Image-aware prompting through camera and gallery input
-- OCR fallback for visible text in images
-- Wake-word support for hands-free launch
-- Local model storage, validation, and lifecycle management
+Lilly was created to reduce that friction with dignity.
 
-The current release is focused on **Android** and targets a reliable, privacy-oriented experience on supported devices with enough storage and memory for local model execution.
+It is not built around the idea of “fixing” anyone. It is built around the belief that better tools can expand autonomy. A good assistive experience should feel respectful, dependable, and private. It should work in the real world, including moments where connectivity is weak, time is short, and the information in front of you is personal.
+
+That is why Lilly is built to be:
+
+- voice-first, for eyes-free interaction
+- on-device, for privacy and resilience
+- multimodal, so it can reason about both words and images
+- offline-capable after setup, so accessibility is not held hostage by the network
 
 ---
 
-## Features
+## Key Features
 
-### On-device inference
-Lilly runs **Gemma 4 E4B** locally through **LiteRT-LM**. Core assistant responses stay on the device.
+### Voice-first conversation
+Lilly supports natural spoken interaction using on-device speech recognition and spoken replies. The goal is not to make the user navigate an interface more efficiently, but to let the interface step out of the way.
 
-### Voice-first interaction
-Lilly can listen to speech, convert it to text, generate a local response, and speak the result back using the system TTS stack.
+### Wake-word activation
+Lilly includes wake-word support for hands-free access. This matters deeply in assistive contexts: a person should not always have to unlock, aim, tap, and navigate before they can ask a question.
 
-### Image-aware assistant flow
-Users can attach an image from the gallery or capture one directly in-app and ask questions naturally.
+### Camera-based scene understanding
+Users can ask Lilly questions such as:
 
-### OCR fallback
-When direct multimodal understanding is limited, Lilly uses **ML Kit OCR** to extract readable text from images and use it as context.
+- “What is this?”
+- “What’s in front of me?”
+- “Describe this scene.”
 
-### Wake-word support
-The Android trigger flow uses **Sherpa ONNX** for wake-word detection and integrates with Lilly’s voice-chat flow.
+Lilly can use camera input to understand nearby objects and surroundings through a local multimodal inference path.
 
-### Private local setup
-The model is downloaded once, stored in app-private storage, and reused locally after validation.
+### OCR fallback for reading visible text
+When a scene includes text, Lilly can fall back to OCR and read content such as:
 
-### Local model controls
-The app includes settings for checking model status, validating model presence, reloading the model, and deleting local model artifacts.
+- labels
+- signs
+- packaging
+- menus
+- handwritten or printed notes
+- text on screens
+
+### Local, private AI
+Lilly’s core assistant reasoning runs on-device through Gemma 4 via LiteRT-LM. Conversations and visual context do not need to be sent to external servers for inference.
+
+### Model management inside the app
+Lilly includes local setup, validation, reload, and delete controls so the model lifecycle is visible and manageable rather than hidden from the user.
 
 ---
 
@@ -88,255 +81,247 @@ The app includes settings for checking model status, validating model presence, 
 
 ---
 
-## Architecture
+## How It Works
 
-### Core runtime
-- **Flutter** for app UI and orchestration
-- **LiteRT-LM** for Android-native Gemma 4 inference
+Lilly combines a Flutter interface with Android-native runtime components.
+
+### Core stack
+
+- **Flutter** for the app experience
+- **Kotlin** for Android-native inference and trigger integration
+- **Gemma 4 E4B** as the local multimodal model
+- **LiteRT-LM** for on-device model execution
 - **Sherpa ONNX** for wake-word detection
-- **speech_to_text** for speech recognition
+- **speech_to_text** for voice recognition
 - **flutter_tts** for spoken replies
-- **camera** for in-app photo capture
-- **google_mlkit_text_recognition** for OCR fallback
+- **ML Kit OCR** for text extraction fallback
+- **camera** for in-app image capture
 
-### High-level flow
-1. Lilly checks whether a valid local model exists.
-2. If not, the user completes setup and downloads the model.
-3. The app initializes the native LiteRT-LM runtime.
-4. User input reaches Lilly by text, voice, or image.
-5. Lilly runs local inference and returns a response.
-6. For voice mode, Lilly can speak the response back.
+### First-run setup workflow
 
-### Wake-word behavior
-Lilly uses an Android foreground service for wake-word listening. When the wake phrase is detected, the app routes the user into the assistant flow using Android-safe notification behavior rather than unsupported background UI launches.
+On first launch, Lilly:
 
----
+1. asks the user to choose a primary voice language
+2. checks whether the model is already present and valid
+3. authenticates with Hugging Face if model access requires it
+4. prompts the user to accept the model license if needed
+5. downloads the Gemma 4 LiteRT-LM model into app-private storage
+6. validates the downloaded file
+7. initializes the local LiteRT-LM runtime
 
-## Model Download
+After setup, the assistant’s core reasoning happens locally on the phone.
 
-Lilly uses a gated Gemma 4 LiteRT-LM model hosted on Hugging Face.
+### Voice conversation workflow
 
-### Current model
-- **Model:** `gemma-4-E4B-it.litertlm`
-- **Expected size:** `3,654,467,584` bytes
-- **Minimum accepted size:** `3,600,000,000` bytes
-- **Source:** [Gemma 4 E4B LiteRT-LM](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm)
+1. the user speaks to Lilly
+2. speech is converted to text
+3. Lilly prepares a local prompt
+4. Gemma 4 generates a response on-device
+5. Lilly speaks the response back
+6. if voice conversation mode is active, Lilly can resume listening for the next turn
 
-### First-run setup
-On a clean install, Lilly does the following:
+### Camera and image workflow
 
-1. Ask the user to choose a primary voice language
-2. Check whether the local model is already present and valid
-3. Authenticate with Hugging Face if model access requires it
-4. Ask the user to accept the model license if needed
-5. Download the model into app-private storage
-6. Validate the downloaded file
-7. Initialize the local runtime and enter the main chat flow
+1. the user attaches or captures an image
+2. Lilly first attempts native multimodal reasoning through Gemma 4
+3. if direct image understanding is limited, Lilly uses OCR fallback for visible text
+4. the extracted image or text context is passed into the assistant response flow
 
-### Important notes
-- The model is large, so first-time setup can take time
-- A stable connection is recommended for first-run download
-- The model stays on the device after download
-- Deleting the model from Settings requires a fresh download later
+This is especially useful for reading labels, signs, packaging, or nearby text that would otherwise remain inaccessible without another person’s help.
 
----
+### Wake-word workflow
 
-## Supported Voice Languages
+Wake-word support is powered by an Android foreground service using Sherpa ONNX.
 
-Lilly currently supports one active voice language at a time:
+The intended experience is:
 
-- English
-- Hindi
-- Spanish
-- French
-- German
-- Portuguese
-- Russian
+1. the user enables wake-word support in Settings
+2. Lilly starts a foreground trigger service
+3. the wake-word model is prepared locally if needed
+4. Lilly listens for the wake phrase
 
----
+When the wake phrase is detected:
 
-## OCR Coverage
+- **If Lilly is already open**, the app can route directly into voice chat.
+- **If Lilly is not in the foreground**, Android may block direct background UI launches. In that case, Lilly raises a high-priority notification so the user can enter voice chat safely and reliably.
 
-Lilly does not enable every OCR script by default.
+This is an important platform truth, and it is worth stating clearly: **modern Android does not allow third-party apps to freely open themselves from the background whenever they want.** Lilly does not pretend otherwise. Instead, it uses the most accessible and Android-compliant path available.
 
-### Currently prioritized
-- Latin
-- Devanagari
+That means the wake-word experience is intentionally designed to be:
 
-### Why this is intentional
-OCR support is scoped to Lilly’s current product priorities so the app stays lighter and more focused. Additional script support can be added later when there is a clear use case.
+- hands-free when the app is already active
+- notification-assisted when Android background rules require it
+- transparent rather than misleading
+
+### Trigger recovery workflow
+
+If trigger autostart is enabled, Lilly can restart the foreground trigger service after device reboot or package replacement through its Android receiver flow. This helps keep the wake-word experience more persistent across normal device lifecycle events.
 
 ---
 
-## How to Build APK
+## Why On-Device and Private Matters
 
-### 1. Install dependencies
+For assistive technology, privacy is not a luxury feature. It is a trust feature.
+
+A person may want help reading:
+
+- a bank statement
+- a medical label
+- a private message
+- a personal document
+- something inside their home
+- something in public that reveals where they are
+
+Those moments are deeply personal. Lilly is built so those moments do not need to become uploaded events.
+
+On-device inference also matters for digital equity:
+
+- not everyone has stable high-speed internet
+- not every important question happens in a place with reliable connectivity
+- accessibility should continue to work even when the network does not
+- private assistance should not depend on a constant cloud connection
+
+Lilly’s design philosophy is simple: **access should remain available even when the signal is weak, the environment is sensitive, or the moment is private.**
+
+---
+
+## Impact and Vision
+
+The most meaningful assistive technologies are often not the loudest ones.
+
+They do not ask users to adapt themselves to the system.  
+They adapt the system to the user’s life.
+
+Lilly is a step toward that kind of technology.
+
+It imagines an assistant that can stand beside a visually impaired user in everyday moments:
+
+- noticing what is in front of them
+- reading what others can see instantly
+- answering naturally by voice
+- remaining available without exposing intimate moments to the cloud
+
+That is not only a technical goal. It is a dignity question.
+
+Greater independence often comes from reducing friction in very small moments. If Lilly can help someone identify an object, read a label privately, or ask a question without hunting through a screen, then it is doing something meaningful: it is making access feel more immediate, more personal, and more self-directed.
+
+The larger vision is a future where multimodal AI is used not merely to impress, but to expand agency for people who have too often been excluded from default digital and physical experiences.
+
+---
+
+## Getting Started
+
+### Requirements
+
+- Flutter SDK compatible with Dart `^3.11.4`
+- Android Studio
+- Android SDK
+- A physical Android device is strongly recommended
+- Enough device storage for the model download
+- A Hugging Face account with access to the Gemma 4 LiteRT-LM model
+
+### Install dependencies
+
 ```bash
 flutter pub get
 ```
 
-### 2. Generate launcher icons
+### Generate launcher icons
+
 ```bash
 dart run flutter_launcher_icons
 ```
 
-### 3. Clean previous build artifacts
+### Run locally
+
 ```bash
-flutter clean
+flutter run
 ```
 
-### 4. Build the release APK
+### Build a release APK
+
 ```bash
+flutter clean
 flutter build apk --release
 ```
 
-### 5. Optional: rename the generated APK
-Flutter usually outputs:
+### Optional APK rename
+
+Flutter typically outputs:
 
 ```text
 build/app/outputs/flutter-apk/app-release.apk
 ```
 
-If you want a cleaner release filename:
+If you want a cleaner filename:
 
 ```bash
 cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/lilly.apk
 ```
 
----
+### Model details
 
-## Permissions Required
+- **Model:** `gemma-4-E4B-it.litertlm`
+- **Expected size:** `3,654,467,584` bytes
+- **Minimum accepted size:** `3,600,000,000` bytes
+- **Source:** [Gemma 4 E4B LiteRT-LM on Hugging Face](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm)
 
-| Permission | Purpose |
-|---|---|
-| `CAMERA` | Capture photos for image-aware prompts |
-| `READ_MEDIA_IMAGES` | Select images from the gallery |
-| `READ_EXTERNAL_STORAGE` | Backward compatibility for older Android versions |
-| `RECORD_AUDIO` | Voice chat and wake-word detection |
-| `INTERNET` | Hugging Face authentication and model download |
-| `FOREGROUND_SERVICE` | Keep the wake-word service active |
-| `FOREGROUND_SERVICE_MICROPHONE` | Microphone use inside the foreground trigger service |
-| `POST_NOTIFICATIONS` | Trigger notifications and foreground service visibility |
-| `WAKE_LOCK` | Help maintain stability for long-running trigger behavior |
-| `RECEIVE_BOOT_COMPLETED` | Restore trigger-related behavior after reboot |
-| `USE_FULL_SCREEN_INTENT` | Important notification behavior for the trigger flow |
+### Important setup notes
+
+- first-run setup requires a large model download
+- a stable connection is recommended during initial setup
+- after setup, core inference is local
+- deleting the model from Settings requires a fresh download later
 
 ---
 
-## Platform Support
+## Current Limitations and Future Roadmap
 
-### Android
-Fully supported and actively implemented.
+Lilly is meaningful today, but it is still early work. Being honest about that matters.
 
-### iOS
-Not wired yet.
+### Current limitations
 
-This is not because Gemma 4 is impossible on iOS in theory. Lilly’s current native inference and trigger architecture is built specifically around Android:
+- Lilly is currently **Android-first**
+- iOS local inference is not wired yet in this repository
+- first-run model setup is heavy because the model is large
+- performance depends strongly on device RAM and backend compatibility
+- wake-word behavior is constrained by Android background rules
+- OCR coverage is intentionally limited today, with current focus on **Latin** and **Devanagari**
+- some weaker devices may struggle with model initialization or long sessions
 
-- Android-native LiteRT-LM integration
-- Android foreground services
-- Android wake-word architecture
-- Android-specific permission and runtime flows
+### Roadmap
 
----
-
-## Limitations
-
-Lilly is functional, but the current release has clear boundaries:
-
-- Android is the primary supported platform
-- Local model initialization can be slow on weaker devices
-- Performance depends heavily on available RAM and backend compatibility
-- The first-run model download is large and not lightweight
-- OCR coverage is intentionally limited to selected scripts
-- Wake-word reliability may vary across device vendors and Android behaviors
-- iOS local inference is not implemented in this repository yet
-- Multimodal quality and responsiveness depend strongly on device capability
+- faster warm-start model behavior
+- stronger voice-loop reliability
+- better multimodal prompting and scene understanding
+- broader OCR support where it clearly improves real-world accessibility
+- more diagnostic visibility for trigger and model lifecycle issues
+- more refined accessibility feedback patterns
+- investigation of an eventual iOS path once the native runtime story matures
 
 ---
 
-## Roadmap
+## Built for the Gemma 4 Good Hackathon
 
-Planned directions for Lilly include:
+Lilly was built as a submission for the **Gemma 4 Good Hackathon**, with a focus on **assistive technology**, **digital equity**, and **private AI that serves real human needs**.
 
-- Faster warm-start model behavior
-- Better streamed responses
-- Cleaner release automation
-- Broader OCR support where it makes product sense
-- Improved wake-word reliability and diagnostics
-- Stronger image reasoning flow
-- Further Android stability work around long sessions and heavy memory use
-- Investigation of an eventual iOS path once the native runtime story matures
+This project is grounded in a belief that AI is most powerful when it restores choice.
 
----
+Not just faster answers.  
+Not just a more polished demo.  
+But more independence, more confidence, and more privacy for people who deserve technology that meets them with respect.
 
-## Project Structure
-
-```text
-lib/
-├── config/
-├── controllers/
-├── models/
-├── screens/
-├── services/
-├── widgets/
-└── main.dart
-
-android/app/src/main/kotlin/com/example/lilly/
-├── MainActivity.kt
-├── LillyTriggerService.kt
-├── WakeWordDetector.kt
-├── WakeWordModelManager.kt
-├── WakeWordConstants.kt
-└── TriggerRestartReceiver.kt
-```
+Lilly is our attempt to build that kind of technology.
 
 ---
 
-## Development
+## Repository
 
-### Run locally
-```bash
-flutter run
-```
-
-### Analyze the project
-```bash
-flutter analyze
-```
-
-### Kotlin compile check on macOS
-```bash
-cd android
-JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew app:compileDebugKotlin
-```
-
----
-
-## Contributing
-
-Contributions, bug reports, device-test feedback, documentation improvements, and UX ideas are welcome.
-
-Useful ways to contribute:
-
-- Report bugs with clear reproduction steps
-- Improve documentation and setup guidance
-- Test Lilly on more Android devices
-- Suggest UX improvements for voice, camera, and model lifecycle flows
-- Help improve wake-word reliability and local-model stability
-
-For larger changes, opening an issue first is recommended so the direction can be discussed before implementation.
+- **GitHub:** [MaNaS0708/Lilly](https://github.com/MaNaS0708/Lilly)
+- **Releases:** [View releases](https://github.com/MaNaS0708/Lilly/releases)
 
 ---
 
 ## License
 
 Lilly is released under the [MIT License](LICENSE).
-
----
-
-## Repository
-
-- **Homepage:** [github.com/MaNaS0708/Lilly](https://github.com/MaNaS0708/Lilly)
-- **Repository:** [github.com/MaNaS0708/Lilly](https://github.com/MaNaS0708/Lilly)
-- **Releases:** [github.com/MaNaS0708/Lilly/releases](https://github.com/MaNaS0708/Lilly/releases)
