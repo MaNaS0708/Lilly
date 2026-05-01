@@ -1,7 +1,7 @@
 # Lilly
 
 [![Version](https://img.shields.io/badge/version-v1.0.0-C88298)](https://github.com/MaNaS0708/Lilly/releases)
-[![Gemma 4](https://img.shields.io/badge/Powered%20by-Gemma%204%20E4B-F97316)](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm)
+[![Gemma 4](https://img.shields.io/badge/Powered%20by-Gemma%204%20E2B-F97316)](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm)
 [![Runtime](https://img.shields.io/badge/Runtime-LiteRT--LM-7C3AED)](https://github.com/google-ai-edge/LiteRT-LM)
 [![Platform](https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white)](https://developer.android.com)
 [![Built with Flutter](https://img.shields.io/badge/Built%20with-Flutter-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
@@ -9,7 +9,7 @@
 
 **Lilly is a private, on-device voice assistant designed to empower visually impaired and blind users with greater independence, confidence, and privacy in everyday life.**
 
-Built on Android with **Flutter**, **native Kotlin**, **Gemma 4 (E4B)**, **LiteRT-LM**, and **Sherpa ONNX**, Lilly can listen, respond, describe what the camera sees, read visible text, and stay available through wake-word activation. Its core promise is simple: **the moments that matter most should not have to leave your phone to become accessible.**
+Built on Android with **Flutter**, **native Kotlin**, **Gemma 4 (E2B)**, **LiteRT-LM**, and **Sherpa ONNX**, Lilly can listen, respond, describe what the camera sees, read visible text, and stay available through wake-word activation. Its core promise is simple: **the moments that matter most should not have to leave your phone to become accessible.**
 
 ---
 
@@ -89,7 +89,7 @@ Lilly combines a Flutter interface with Android-native runtime components.
 
 - **Flutter** for the app experience
 - **Kotlin** for Android-native inference and trigger integration
-- **Gemma 4 E4B** as the local multimodal model
+- **Gemma 4 E2B** as the local multimodal model
 - **LiteRT-LM** for on-device model execution
 - **Sherpa ONNX** for wake-word detection
 - **speech_to_text** for voice recognition
@@ -192,7 +192,7 @@ Lilly is powerful, but it is also demanding. That is an honest part of the proje
 The app can feel heavy on some devices for a few clear reasons:
 
 ### The model is large
-Lilly uses **Gemma 4 E4B**, and the local model file is roughly **3.6 GB**. Loading a model of that size is very different from loading a normal app asset or a lightweight mobile feature.
+Lilly uses **Gemma 4 E2B**, and the local model file is roughly **2.6 GB**. Loading a model of that size is very different from loading a normal app asset or a lightweight mobile feature.
 
 ### Inference happens on the phone
 Lilly is not sending prompts to a remote server. The device itself has to:
@@ -308,10 +308,10 @@ cp build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/l
 
 ### Model details
 
-- **Model:** `gemma-4-E4B-it.litertlm`
-- **Expected size:** `3,654,467,584` bytes
-- **Minimum accepted size:** `3,600,000,000` bytes
-- **Source:** [Gemma 4 E4B LiteRT-LM on Hugging Face](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm)
+- **Model:** `gemma-4-E2B-it.litertlm`
+- **Approximate size:** roughly `2.6 GB`
+- **Minimum accepted size:** `2,500,000,000` bytes
+- **Source:** [Gemma 4 E2B LiteRT-LM on Hugging Face](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm)
 
 ### Important setup notes
 

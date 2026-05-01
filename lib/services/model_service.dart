@@ -7,5 +7,8 @@ abstract class ModelService {
   Future<void> dispose();
 
   Future<ModelStatus> getStatus();
-  Future<ModelResult> generateResponse(ModelRequest request);
+  Future<ModelResult> generateResponse(
+    ModelRequest request, {
+    void Function(String text)? onPartialText,
+  });
 }

@@ -1,12 +1,16 @@
 package com.example.lilly
-
 import android.app.ActivityManager
 import android.app.NotificationManager
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
@@ -14,17 +18,24 @@ import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.ExperimentalApi
 import com.google.ai.edge.litertlm.LogSeverity
 import com.google.ai.edge.litertlm.Message
+import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.Executors
 
+
 class MainActivity : FlutterActivity() {
     companion object {
+        private const val TAG = "Lilly"
+
         init {
             try {
                 System.loadLibrary("litertlm_jni")
@@ -35,11 +46,13 @@ class MainActivity : FlutterActivity() {
     }
 
     private val modelChannelName = "lilly/model"
+    private val modelStreamChannelName = "lilly/model_stream"
     private val triggerChannelName = "lilly/trigger"
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val modelExecutor = Executors.newSingleThreadExecutor()
     private val maxModelTokens = 1024
+    private val maxInferenceImageDimension = 768
     private val maxModelImages = 1
 
     private data class BackendPlan(
@@ -55,7 +68,15 @@ class MainActivity : FlutterActivity() {
     private var modelPath: String? = null
     private var modelError: String? = null
     private var activeBackend: String = "uninitialized"
+    private var modelEventSink: EventChannel.EventSink? = null
+    private val pendingModelEvents = mutableListOf<Map<String, Any?>>()
+    private var activeConversation: ConversationHandle? = null
     private var pendingLaunchAction: String? = null
+
+    private data class ConversationHandle(
+        val id: String,
+        val conversation: com.google.ai.edge.litertlm.Conversation,
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -104,13 +125,47 @@ class MainActivity : FlutterActivity() {
                     "generateResponse" -> {
                         val prompt = call.argument<String>("prompt").orEmpty()
                         val imagePath = call.argument<String>("imagePath")
+                        val conversationId = call.argument<String>("conversationId")
                         val history = call.argument<List<*>>("history")
-                        generateResponse(prompt, imagePath, history, result)
+                        generateResponse(prompt, imagePath, conversationId, history, result)
+                    }
+
+                    "generateResponseStream" -> {
+                        val requestId = call.argument<String>("requestId").orEmpty()
+                        val prompt = call.argument<String>("prompt").orEmpty()
+                        val imagePath = call.argument<String>("imagePath")
+                        val conversationId = call.argument<String>("conversationId")
+                        val history = call.argument<List<*>>("history")
+                        generateResponseStream(
+                            requestId,
+                            prompt,
+                            imagePath,
+                            conversationId,
+                            history,
+                            result,
+                        )
                     }
 
                     else -> result.notImplemented()
                 }
             }
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, modelStreamChannelName)
+            .setStreamHandler(
+                object : EventChannel.StreamHandler {
+                    override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                        modelEventSink = events
+                        if (events != null && pendingModelEvents.isNotEmpty()) {
+                            pendingModelEvents.forEach { events.success(it) }
+                            pendingModelEvents.clear()
+                        }
+                    }
+
+                    override fun onCancel(arguments: Any?) {
+                        modelEventSink = null
+                    }
+                }
+            )
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, triggerChannelName)
             .setMethodCallHandler { call, result ->
@@ -410,25 +465,10 @@ class MainActivity : FlutterActivity() {
     private fun backendPlansForModel(file: File): List<BackendPlan> {
         val cpu = Backend.CPU(4)
         val gpu = Backend.GPU()
-        val npu = Backend.NPU(applicationInfo.nativeLibraryDir)
         val fileName = file.name.lowercase()
 
-        val tensorE4bPlans = listOf(
-            BackendPlan(
-                name = "npu-core-vision-cpu",
-                backend = npu,
-                visionBackend = cpu,
-                audioBackend = null,
-            ),
-            BackendPlan(
-                name = "cpu-safe",
-                backend = cpu,
-                visionBackend = cpu,
-                audioBackend = null,
-            ),
-        )
-
-        val genericE4bPlans = listOf(
+        // E2B model: efficient medium-sized model, prefer GPU then CPU
+        val e2bPlans = listOf(
             BackendPlan(
                 name = "gpu-core-vision-cpu",
                 backend = gpu,
@@ -438,30 +478,14 @@ class MainActivity : FlutterActivity() {
             BackendPlan(
                 name = "cpu-safe",
                 backend = cpu,
-                visionBackend = cpu,
-                audioBackend = null,
-            ),
-        )
-
-        val smallerModelPlans = listOf(
-            BackendPlan(
-                name = "cpu-safe",
-                backend = cpu,
-                visionBackend = cpu,
-                audioBackend = null,
-            ),
-            BackendPlan(
-                name = "gpu-core-vision-cpu",
-                backend = gpu,
                 visionBackend = cpu,
                 audioBackend = null,
             ),
         )
 
         return when {
-            fileName.contains("e4b") && isTensorPixel() -> tensorE4bPlans
-            fileName.contains("e4b") -> genericE4bPlans
-            else -> smallerModelPlans
+            fileName.contains("e2b") -> e2bPlans
+            else -> e2bPlans // Default to E2B-style plans for unknown models
         }
     }
 
@@ -485,32 +509,10 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun isTensorPixel(): Boolean {
-        val manufacturer = Build.MANUFACTURER.lowercase()
-        val brand = Build.BRAND.lowercase()
-        val model = Build.MODEL.lowercase()
-        val hardware = Build.HARDWARE.lowercase()
-        val socManufacturer = if (Build.VERSION.SDK_INT >= 31) {
-            Build.SOC_MANUFACTURER.lowercase()
-        } else {
-            ""
-        }
-
-        val looksLikePixelTensor =
-            (manufacturer == "google" || brand == "google") &&
-                (model.contains("pixel 6") ||
-                    model.contains("pixel 7") ||
-                    model.contains("pixel 8") ||
-                    model.contains("pixel 9"))
-
-        return looksLikePixelTensor ||
-            hardware.contains("tensor") ||
-            socManufacturer.contains("google")
-    }
-
     private fun generateResponse(
         prompt: String,
         imagePath: String?,
+        conversationId: String?,
         history: List<*>?,
         result: MethodChannel.Result,
     ) {
@@ -575,6 +577,7 @@ class MainActivity : FlutterActivity() {
                     activeEngine = activeEngine,
                     prompt = trimmedPrompt,
                     imagePath = normalizedImagePath,
+                    conversationId = conversationId,
                     initialMessages = initialMessages,
                 )
 
@@ -591,6 +594,7 @@ class MainActivity : FlutterActivity() {
                     cause = e,
                     prompt = trimmedPrompt,
                     imagePath = normalizedImagePath,
+                    conversationId = conversationId,
                     initialMessages = initialMessages,
                 )
 
@@ -614,6 +618,105 @@ class MainActivity : FlutterActivity() {
                     mapOf(
                         "success" to false,
                         "text" to "",
+                        "errorMessage" to errorMessage,
+                    )
+                )
+            }
+        }
+    }
+
+    private fun generateResponseStream(
+        requestId: String,
+        prompt: String,
+        imagePath: String?,
+        conversationId: String?,
+        history: List<*>?,
+        result: MethodChannel.Result,
+    ) {
+        if (requestId.isBlank()) {
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to "Missing stream request id.",
+                )
+            )
+            return
+        }
+
+        if (modelLoading) {
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to "Model is still loading.",
+                )
+            )
+            return
+        }
+
+        val activeEngine = engine
+        if (!modelReady || activeEngine == null || modelPath.isNullOrBlank()) {
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to "Model is not initialized on Android.",
+                )
+            )
+            return
+        }
+
+        val normalizedImagePath = imagePath?.trim().orEmpty().ifEmpty { null }
+        if (normalizedImagePath != null) {
+            val imageFile = File(normalizedImagePath)
+            if (!imageFile.exists()) {
+                result.success(
+                    mapOf(
+                        "success" to false,
+                        "errorMessage" to "Selected image file was not found.",
+                    )
+                )
+                return
+            }
+        }
+
+        val trimmedPrompt = normalizePrompt(
+            prompt = prompt,
+            hasImage = normalizedImagePath != null,
+        )
+        if (trimmedPrompt.isEmpty()) {
+            result.success(
+                mapOf(
+                    "success" to false,
+                    "errorMessage" to "Please enter a message.",
+                )
+            )
+            return
+        }
+
+        val initialMessages = buildInitialMessages(history)
+        result.success(
+            mapOf(
+                "success" to true,
+                "requestId" to requestId,
+            )
+        )
+
+        modelExecutor.execute {
+            try {
+                runStreamingInference(
+                    activeEngine = activeEngine,
+                    requestId = requestId,
+                    prompt = trimmedPrompt,
+                    imagePath = normalizedImagePath,
+                    conversationId = conversationId,
+                    initialMessages = initialMessages,
+                )
+            } catch (e: Exception) {
+                val errorMessage = buildInferenceErrorMessage(e)
+                modelError = errorMessage
+                postStreamEvent(
+                    mapOf(
+                        "requestId" to requestId,
+                        "type" to "error",
                         "errorMessage" to errorMessage,
                     )
                 )
@@ -658,13 +761,248 @@ class MainActivity : FlutterActivity() {
         return trimmed.substring(0, maxPromptChars)
     }
 
+    private fun prepareImageForInference(imagePath: String?): ByteArray? {
+        if (imagePath.isNullOrBlank()) return null
+
+        return try {
+            val source = File(imagePath)
+            if (!source.exists()) return null
+
+            val bounds = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(source.absolutePath, bounds)
+
+            val width = bounds.outWidth
+            val height = bounds.outHeight
+            if (width <= 0 || height <= 0) {
+                return readOriginalImageBytes(source)
+            }
+
+            val sourceMax = maxOf(width, height)
+            var sampleSize = 1
+            while (sourceMax / sampleSize > maxInferenceImageDimension * 2) {
+                sampleSize *= 2
+            }
+
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+            }
+
+            val decoded = BitmapFactory.decodeFile(source.absolutePath, decodeOptions)
+                ?: return readOriginalImageBytes(source)
+
+            val oriented = rotateBitmapIfNeeded(decoded, source.absolutePath)
+            val scaled = scaleBitmapIfNeeded(oriented)
+
+            val output = ByteArrayOutputStream()
+            scaled.compress(Bitmap.CompressFormat.JPEG, 90, output)
+            val bytes = output.toByteArray()
+
+            if (scaled !== oriented) scaled.recycle()
+            if (oriented !== decoded) oriented.recycle()
+            if (!decoded.isRecycled) decoded.recycle()
+
+            bytes
+        } catch (_: Throwable) {
+            val source = File(imagePath)
+            readOriginalImageBytes(source)
+        }
+    }
+
+    private fun readOriginalImageBytes(file: File): ByteArray? {
+        return try {
+            if (file.exists()) file.readBytes() else null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+
+    private fun rotateBitmapIfNeeded(bitmap: Bitmap, imagePath: String): Bitmap {
+        val orientation = try {
+            ExifInterface(imagePath).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL,
+            )
+        } catch (_: Exception) {
+            ExifInterface.ORIENTATION_NORMAL
+        }
+
+        val degrees = when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+
+        if (degrees == 0f) return bitmap
+
+        val matrix = Matrix().apply { postRotate(degrees) }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
+    private fun scaleBitmapIfNeeded(bitmap: Bitmap): Bitmap {
+        val currentMax = maxOf(bitmap.width, bitmap.height)
+        if (currentMax <= maxInferenceImageDimension) return bitmap
+
+        val ratio = maxInferenceImageDimension.toFloat() / currentMax.toFloat()
+        val targetWidth = maxOf(1, (bitmap.width * ratio).toInt())
+        val targetHeight = maxOf(1, (bitmap.height * ratio).toInt())
+        return Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+    }
+
     private fun runInference(
         activeEngine: Engine,
         prompt: String,
         imagePath: String?,
+        conversationId: String?,
         initialMessages: List<Message>,
     ): String {
-        val conversationConfig = ConversationConfig(
+        val hasImage = !imagePath.isNullOrBlank()
+        val requestType = if (hasImage) "image" else "text"
+        Log.d(TAG, "runInference: starting $requestType request (conversationId=$conversationId)")
+
+        val preparedImageBytes = prepareImageForInference(imagePath)
+        val keepConversationAlive = preparedImageBytes == null
+        val acquired = acquireConversation(
+            activeEngine = activeEngine,
+            conversationId = conversationId,
+            initialMessages = initialMessages,
+            keepAlive = keepConversationAlive,
+        )
+
+        val response = try {
+            if (preparedImageBytes == null) {
+                acquired.conversation.sendMessage(prompt)
+            } else {
+                acquired.conversation.sendMessage(
+                    Contents.of(
+                        Content.Text(prompt),
+                        Content.ImageBytes(preparedImageBytes),
+                    )
+                )
+            }
+
+
+        } catch (e: Exception) {
+            Log.e(TAG, "runInference: $requestType request failed", e)
+            if (!acquired.closeAfterUse) {
+                closeActiveConversation()
+            }
+            throw e
+        } finally {
+            if (acquired.closeAfterUse) {
+                Log.d(TAG, "runInference: closing temporary $requestType conversation")
+                safeCloseConversation(acquired.conversation)
+            }
+        }
+
+        Log.d(TAG, "runInference: $requestType request completed")
+        return extractText(response)
+    }
+
+    private fun runStreamingInference(
+        activeEngine: Engine,
+        requestId: String,
+        prompt: String,
+        imagePath: String?,
+        conversationId: String?,
+        initialMessages: List<Message>,
+    ) {
+        val preparedImageBytes = prepareImageForInference(imagePath)
+        val keepConversationAlive = preparedImageBytes == null
+        val acquired = acquireConversation(
+            activeEngine = activeEngine,
+            conversationId = conversationId,
+            initialMessages = initialMessages,
+            keepAlive = keepConversationAlive,
+        )
+
+        val callback = object : MessageCallback {
+            override fun onMessage(message: Message) {
+                val text = extractText(message, preserveWhitespace = true)
+                if (text.isBlank()) return
+
+                postStreamEvent(
+                    mapOf(
+                        "requestId" to requestId,
+                        "type" to "partial",
+                        "text" to text,
+                    )
+                )
+            }
+
+            override fun onDone() {
+                postBenchmarkMetrics(requestId, acquired.conversation)
+                postStreamEvent(
+                    mapOf(
+                        "requestId" to requestId,
+                        "type" to "done",
+                        "text" to "",
+                    )
+                )
+
+                if (acquired.closeAfterUse) {
+                    safeCloseConversation(acquired.conversation)
+                }
+            }
+
+            override fun onError(throwable: Throwable) {
+                val exception = Exception(
+                    throwable.message ?: throwable.javaClass.simpleName,
+                    throwable,
+                )
+                val errorMessage = buildInferenceErrorMessage(exception)
+                modelError = errorMessage
+
+                if (acquired.closeAfterUse) {
+                    safeCloseConversation(acquired.conversation)
+                } else {
+                    closeActiveConversation()
+                }
+
+                postStreamEvent(
+                    mapOf(
+                        "requestId" to requestId,
+                        "type" to "error",
+                        "errorMessage" to errorMessage,
+                    )
+                )
+            }
+        }
+
+        try {
+            if (preparedImageBytes == null) {
+                acquired.conversation.sendMessageAsync(prompt, callback)
+            } else {
+                acquired.conversation.sendMessageAsync(
+                    Contents.of(
+                        Content.Text(prompt),
+                        Content.ImageBytes(preparedImageBytes),
+                    ),
+                    callback,
+                )
+            }
+
+
+        } catch (e: Exception) {
+            if (acquired.closeAfterUse) {
+                safeCloseConversation(acquired.conversation)
+            } else {
+                closeActiveConversation()
+            }
+            throw e
+        }
+    }
+
+    private data class AcquiredConversation(
+        val conversation: com.google.ai.edge.litertlm.Conversation,
+        val closeAfterUse: Boolean,
+    )
+
+    private fun buildConversationConfig(initialMessages: List<Message>): ConversationConfig {
+        return ConversationConfig(
             systemInstruction = Contents.of(
                 """
                 You are Lilly.
@@ -682,44 +1020,90 @@ class MainActivity : FlutterActivity() {
                 seed = 1,
             ),
         )
-
-        val response = activeEngine.createConversation(conversationConfig).use { conversation ->
-            if (imagePath.isNullOrBlank()) {
-                conversation.sendMessage(prompt)
-            } else {
-                conversation.sendMessage(
-                    Contents.of(
-                        Content.Text(prompt),
-                        Content.ImageFile(File(imagePath).absolutePath),
-                    )
-                )
-            }
-        }
-
-        return extractText(response)
     }
 
-    private fun shouldRetryInference(cause: Exception): Boolean {
+    private fun acquireConversation(
+        activeEngine: Engine,
+        conversationId: String?,
+        initialMessages: List<Message>,
+        keepAlive: Boolean,
+    ): AcquiredConversation {
+        // If this is a temporary conversation (image inference), close any cached conversation first.
+        // LiteRT-LM only supports one active conversation per engine at a time.
+        if (!keepAlive) {
+            Log.d(TAG, "acquireConversation: creating temporary conversation (image)")
+            closeActiveConversation()
+            return AcquiredConversation(
+                conversation = activeEngine.createConversation(buildConversationConfig(initialMessages)),
+                closeAfterUse = true,
+            )
+        }
+
+        // For persistent conversations (text-only requests):
+        if (conversationId.isNullOrBlank()) {
+            Log.d(TAG, "acquireConversation: creating fresh persistent conversation (no id)")
+            closeActiveConversation()
+            val conversation = activeEngine.createConversation(buildConversationConfig(initialMessages))
+            activeConversation = ConversationHandle("", conversation)
+            return AcquiredConversation(conversation, closeAfterUse = false)
+        }
+
+        // Try to reuse the cached text conversation if it's still alive and has the same ID.
+        val existing = activeConversation
+        if (existing != null &&
+            existing.id == conversationId &&
+            existing.conversation.isAlive
+        ) {
+            Log.d(TAG, "acquireConversation: reusing cached conversation '$conversationId'")
+            return AcquiredConversation(existing.conversation, closeAfterUse = false)
+        }
+
+        // Otherwise, close the old one and create a fresh persistent conversation.
+        Log.d(TAG, "acquireConversation: closing old conversation and creating new one for '$conversationId'")
+        closeActiveConversation()
+        val conversation = activeEngine.createConversation(buildConversationConfig(initialMessages))
+        activeConversation = ConversationHandle(conversationId, conversation)
+        return AcquiredConversation(conversation, closeAfterUse = false)
+    }
+
+    private fun shouldRetryInference(
+        cause: Exception,
+        imagePath: String?,
+    ): Boolean {
+        // Only retry text requests with backend errors, not image requests.
+        // Image failures should be handled by the Dart layer (e.g., OCR fallback).
+        // If we rebuild the engine here, it permanently demotes the backend for all future requests.
+        if (!imagePath.isNullOrBlank()) {
+            return false
+        }
+
         val message = cause.message?.lowercase().orEmpty()
         return message.contains("nativesendmessage") ||
             message.contains("failed to invoke the compiled model") ||
             message.contains("compiled_model_executor")
     }
 
+
     private fun retryInferenceIfNeeded(
         cause: Exception,
         prompt: String,
         imagePath: String?,
+        conversationId: String?,
         initialMessages: List<Message>,
     ): String? {
         val path = modelPath ?: return null
-        if (!shouldRetryInference(cause)) {
+        if (!shouldRetryInference(cause, imagePath)) {
+            Log.d(TAG, "retryInferenceIfNeeded: no retry needed (image request or non-backend error)")
             return null
         }
 
+        Log.w(TAG, "retryInferenceIfNeeded: text request failed with $activeBackend, rebuilding engine", cause)
+        val file = File(path)
+        val retryPlans = recoveryBackendPlans(file, activeBackend)
+
         return try {
             closeEngine()
-            val rebuilt = createEngine(path, recoveryBackendPlans(File(path), activeBackend))
+            val rebuilt = createEngine(path, retryPlans)
 
             engine = rebuilt.first
             activeBackend = rebuilt.second
@@ -727,13 +1111,16 @@ class MainActivity : FlutterActivity() {
             modelLoading = false
             modelError = null
 
+            Log.d(TAG, "retryInferenceIfNeeded: engine rebuilt with backend=$activeBackend, retrying text request")
             runInference(
                 activeEngine = rebuilt.first,
                 prompt = prompt,
                 imagePath = imagePath,
+                conversationId = conversationId,
                 initialMessages = initialMessages,
             )
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "retryInferenceIfNeeded: retry also failed", e)
             null
         }
     }
@@ -767,18 +1154,53 @@ class MainActivity : FlutterActivity() {
         }.trim()
     }
 
-    private fun extractText(message: Message): String {
+    @OptIn(ExperimentalApi::class)
+    private fun postBenchmarkMetrics(
+        requestId: String,
+        conversation: com.google.ai.edge.litertlm.Conversation,
+    ) {
+        try {
+            val info = conversation.getBenchmarkInfo()
+            val summary =
+                "backend=$activeBackend ttft=${info.timeToFirstTokenInSecond}s " +
+                    "prefill=${info.lastPrefillTokenCount}@${info.lastPrefillTokensPerSecond}/s " +
+                    "decode=${info.lastDecodeTokenCount}@${info.lastDecodeTokensPerSecond}/s"
+
+            postStreamEvent(
+                mapOf(
+                    "requestId" to requestId,
+                    "type" to "metrics",
+                    "summary" to summary,
+                    "backend" to activeBackend,
+                    "timeToFirstTokenSeconds" to info.timeToFirstTokenInSecond,
+                    "prefillTokenCount" to info.lastPrefillTokenCount,
+                    "decodeTokenCount" to info.lastDecodeTokenCount,
+                    "prefillTokensPerSecond" to info.lastPrefillTokensPerSecond,
+                    "decodeTokensPerSecond" to info.lastDecodeTokensPerSecond,
+                )
+            )
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun extractText(
+        message: Message,
+        preserveWhitespace: Boolean = false,
+    ): String {
         val textParts = message.contents.contents
             .filterIsInstance<Content.Text>()
-            .map { it.text.trim() }
+            .map { part ->
+                if (preserveWhitespace) part.text else part.text.trim()
+            }
             .filter { it.isNotEmpty() }
 
         return if (textParts.isNotEmpty()) {
-            textParts.joinToString(separator = "\n")
+            textParts.joinToString(separator = if (preserveWhitespace) "" else "\n")
         } else {
             message.toString()
         }
     }
+
 
     private fun deviceDiagnostics(): String {
         val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
@@ -795,6 +1217,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun disposeModel() {
+        closeActiveConversation()
         closeEngine()
         modelReady = false
         modelLoading = false
@@ -804,11 +1227,28 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun closeEngine() {
+        closeActiveConversation()
         try {
             engine?.close()
         } catch (_: Exception) {
         } finally {
             engine = null
+        }
+    }
+
+    private fun closeActiveConversation() {
+        val existing = activeConversation
+        activeConversation = null
+        if (existing != null) {
+            Log.d(TAG, "closeActiveConversation: closing conversation '${existing.id}'")
+            safeCloseConversation(existing.conversation)
+        }
+    }
+
+    private fun safeCloseConversation(conversation: com.google.ai.edge.litertlm.Conversation) {
+        try {
+            conversation.close()
+        } catch (_: Exception) {
         }
     }
 
@@ -818,6 +1258,20 @@ class MainActivity : FlutterActivity() {
     ) {
         mainHandler.post {
             result.success(payload)
+        }
+    }
+
+    private fun postStreamEvent(payload: Map<String, Any?>) {
+        mainHandler.post {
+            val sink = modelEventSink
+            if (sink == null) {
+                if (pendingModelEvents.size >= 64) {
+                    pendingModelEvents.removeAt(0)
+                }
+                pendingModelEvents.add(payload)
+            } else {
+                sink.success(payload)
+            }
         }
     }
 

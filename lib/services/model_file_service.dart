@@ -67,11 +67,7 @@ class ModelFileService {
     if (file == null || !await file.exists()) return false;
 
     final size = await file.length();
-    if (strict) {
-      return size == ModelSetupConstants.expectedModelBytes;
-    }
-
-    return size >= ModelSetupConstants.minimumValidModelBytes;
+    return _isValidModelSize(size, strict: strict);
   }
 
   Future<ModelFileInfo> inspectModelFile({bool strict = false}) async {
@@ -79,11 +75,10 @@ class ModelFileService {
     final targetPath = existing?.path ?? await getModelPath();
     final exists = existing != null && await existing.exists();
     final sizeBytes = exists ? await existing.length() : 0;
-    final isValid =
-        exists &&
-        (strict
-            ? sizeBytes == ModelSetupConstants.expectedModelBytes
-            : sizeBytes >= ModelSetupConstants.minimumValidModelBytes);
+    final isValid = exists && _isValidModelSize(sizeBytes, strict: strict);
+    (strict
+        ? sizeBytes == ModelSetupConstants.expectedModelBytes
+        : sizeBytes >= ModelSetupConstants.minimumValidModelBytes);
 
     return ModelFileInfo(
       exists: exists,
@@ -124,10 +119,9 @@ class ModelFileService {
       final name = entity.path.split('/').last.toLowerCase();
       final looksLikeGemmaArtifact =
           name == ModelSetupConstants.modelFileName.toLowerCase() ||
-          name.startsWith(
-            ModelSetupConstants.modelFileName.toLowerCase(),
-          ) ||
-          name.contains('gemma-4-e4b-it') ||
+          name.startsWith(ModelSetupConstants.modelFileName.toLowerCase()) ||
+          // Clean up E2B model files and partial downloads.
+          name.contains('gemma-4-e2b-it') ||
           name.contains('.litertlm') ||
           (name.contains('gemma') && name.endsWith('.part')) ||
           (name.contains('gemma') && name.endsWith('.partial')) ||
@@ -180,5 +174,18 @@ class ModelFileService {
     required Iterable<String> voiceLanguageCodes,
   }) async {
     return hasValidModelFile(strict: true);
+  }
+
+  bool _isValidModelSize(int sizeBytes, {required bool strict}) {
+    if (sizeBytes < ModelSetupConstants.minimumValidModelBytes) {
+      return false;
+    }
+
+    final expectedBytes = ModelSetupConstants.expectedModelBytes;
+    if (strict && expectedBytes != null) {
+      return sizeBytes == expectedBytes;
+    }
+
+    return true;
   }
 }

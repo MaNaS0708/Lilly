@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart';
@@ -8,11 +9,7 @@ import '../models/voice_language.dart';
 import 'settings_service.dart';
 
 class VoiceEvent {
-  const VoiceEvent({
-    required this.type,
-    this.text,
-    this.message,
-  });
+  const VoiceEvent({required this.type, this.text, this.message});
 
   final String type;
   final String? text;
@@ -20,17 +17,24 @@ class VoiceEvent {
 }
 
 class VoiceService {
-  VoiceService({
-    SettingsService? settingsService,
-  }) : _settingsService = settingsService ?? SettingsService() {
+  VoiceService({SettingsService? settingsService})
+    : _settingsService = settingsService ?? SettingsService() {
     _tts.setStartHandler(() {
-      _events.add(const VoiceEvent(type: 'speaking'));
+      _ttsActive = true;
+      _emit(const VoiceEvent(type: 'speaking'));
     });
+
     _tts.setCompletionHandler(() {
-      _events.add(const VoiceEvent(type: 'spoken'));
+      _finishTts();
     });
+
     _tts.setCancelHandler(() {
-      _events.add(const VoiceEvent(type: 'spoken'));
+      _finishTts();
+    });
+
+    _tts.setErrorHandler((message) {
+      debugPrint('[VoiceService] TTS engine error: $message');
+      _finishTts();
     });
   }
 
@@ -47,13 +51,22 @@ class VoiceService {
   List<LocaleName> _availableSpeechLocales = const [];
   int _activeSessionId = 0;
   bool _suppressRecognizerCallbacks = false;
+  bool _disposed = false;
+  Completer<void>? _ttsCompleter;
+  bool _ttsActive = false;
+  bool _ttsSpokenEventEmitted = false;
 
   Stream<VoiceEvent> get events => _events.stream;
+
+  void _emit(VoiceEvent event) {
+    if (_disposed || _events.isClosed) return;
+    _events.add(event);
+  }
 
   Future<bool> initializeVoiceModel() async {
     final micPermission = await Permission.microphone.request();
     if (!micPermission.isGranted) {
-      _events.add(
+      _emit(
         const VoiceEvent(
           type: 'error',
           message: 'Microphone permission is required for voice chat.',
@@ -65,22 +78,20 @@ class VoiceService {
     await _prepareTts();
 
     if (_speechReady) {
-      _events.add(const VoiceEvent(type: 'ready'));
+      _emit(const VoiceEvent(type: 'ready'));
       return true;
     }
 
     _speechReady = await _speech.initialize(
       onStatus: (status) {
-        if (_suppressRecognizerCallbacks) {
-          return;
-        }
+        if (_suppressRecognizerCallbacks) return;
 
         final normalized = status.toLowerCase();
 
         if (normalized.contains('listening')) {
           if (!_listening) {
             _listening = true;
-            _events.add(const VoiceEvent(type: 'listening'));
+            _emit(const VoiceEvent(type: 'listening'));
           }
           return;
         }
@@ -91,17 +102,16 @@ class VoiceService {
 
           if (wasListening) {
             _emitBufferedFinalIfNeeded();
-            _events.add(const VoiceEvent(type: 'stopped'));
+            _emit(const VoiceEvent(type: 'stopped'));
           }
         }
       },
       onError: (error) {
-        if (_suppressRecognizerCallbacks) {
-          return;
-        }
+        if (_suppressRecognizerCallbacks) return;
 
         final message = error.errorMsg.toLowerCase();
-        final isSoftStop = message.contains('timeout') ||
+        final isSoftStop =
+            message.contains('timeout') ||
             message.contains('no match') ||
             message.contains('error_no_match') ||
             message.contains('error_speech_timeout');
@@ -110,11 +120,11 @@ class VoiceService {
 
         if (isSoftStop) {
           _emitBufferedFinalIfNeeded();
-          _events.add(const VoiceEvent(type: 'stopped'));
+          _emit(const VoiceEvent(type: 'stopped'));
           return;
         }
 
-        _events.add(
+        _emit(
           VoiceEvent(
             type: 'error',
             message: error.errorMsg.isEmpty
@@ -129,11 +139,11 @@ class VoiceService {
       try {
         _availableSpeechLocales = await _speech.locales();
       } catch (_) {}
-      _events.add(const VoiceEvent(type: 'ready'));
+      _emit(const VoiceEvent(type: 'ready'));
       return true;
     }
 
-    _events.add(
+    _emit(
       const VoiceEvent(
         type: 'error',
         message:
@@ -149,16 +159,20 @@ class VoiceService {
 
     _activeSessionId++;
     final sessionId = _activeSessionId;
-    _suppressRecognizerCallbacks = false;
+    _suppressRecognizerCallbacks = true;
     _lastRecognizedText = '';
     _finalAlreadyEmitted = false;
 
-    await stopSpeaking();
+    debugPrint(
+      '[VoiceService] startListening: session=$sessionId, _ttsActive=$_ttsActive',
+    );
 
     try {
       await _speech.cancel();
 
       final localeId = await _resolveSpeechLocale();
+      _suppressRecognizerCallbacks = false;
+
       await _speech.listen(
         onResult: (result) {
           if (_suppressRecognizerCallbacks || sessionId != _activeSessionId) {
@@ -172,9 +186,10 @@ class VoiceService {
 
           if (result.finalResult) {
             _finalAlreadyEmitted = true;
+            debugPrint('[VoiceService] final transcript: "$text"');
           }
 
-          _events.add(
+          _emit(
             VoiceEvent(
               type: result.finalResult ? 'final' : 'partial',
               text: text,
@@ -182,7 +197,7 @@ class VoiceService {
           );
         },
         listenFor: const Duration(minutes: 2),
-        pauseFor: const Duration(seconds: 6),
+        pauseFor: const Duration(seconds: 3),
         localeId: localeId,
         listenOptions: SpeechListenOptions(
           listenMode: ListenMode.dictation,
@@ -191,10 +206,15 @@ class VoiceService {
         ),
       );
 
+      _listening = true;
+      debugPrint('[VoiceService] listening started');
+      _emit(const VoiceEvent(type: 'listening'));
       return true;
     } catch (e) {
+      _suppressRecognizerCallbacks = false;
       _listening = false;
-      _events.add(
+      debugPrint('[VoiceService] startListening error: $e');
+      _emit(
         VoiceEvent(
           type: 'error',
           message: e.toString().replaceFirst('Exception: ', ''),
@@ -204,7 +224,10 @@ class VoiceService {
     }
   }
 
-  Future<bool> stopListening({bool clearBufferedText = false}) async {
+  Future<bool> stopListening({
+    bool clearBufferedText = false,
+    bool emitStopped = true,
+  }) async {
     _activeSessionId++;
     _suppressRecognizerCallbacks = true;
     _listening = false;
@@ -222,21 +245,115 @@ class VoiceService {
       await _speech.cancel();
     } catch (_) {}
 
-    _events.add(const VoiceEvent(type: 'stopped'));
+    if (emitStopped) {
+      _emit(const VoiceEvent(type: 'stopped'));
+    }
     return true;
   }
 
   Future<void> speakReply(String text) async {
-    final cleaned = text.trim();
+    final cleaned = _speechSafeText(text);
     if (cleaned.isEmpty) return;
 
-    await stopListening(clearBufferedText: true);
+    final preview = cleaned.length > 50
+        ? '${cleaned.substring(0, 50)}...'
+        : cleaned;
+    debugPrint('[VoiceService] speakReply: starting TTS for "$preview"');
+
+    await stopListening(clearBufferedText: true, emitStopped: false);
+
+    try {
+      await _tts.stop();
+    } catch (_) {}
+
+    await Future<void>.delayed(const Duration(milliseconds: 140));
     await _prepareTts();
-    await _tts.speak(cleaned);
+
+    _ttsCompleter = Completer<void>();
+    _ttsSpokenEventEmitted = false;
+    _ttsActive = true;
+
+    final timeoutSeconds = (cleaned.length ~/ 8).clamp(20, 70).toInt();
+
+    try {
+      final speakResult = await _tts
+          .speak(cleaned)
+          .timeout(
+            Duration(seconds: timeoutSeconds),
+            onTimeout: () {
+              debugPrint('[VoiceService] TTS speak timeout');
+              _finishTts();
+              return null;
+            },
+          );
+
+      if (speakResult == 0 || speakResult == false) {
+        throw Exception('TTS engine refused to start.');
+      }
+
+      if (_ttsCompleter != null && !_ttsCompleter!.isCompleted) {
+        _finishTts();
+      }
+    } catch (e) {
+      debugPrint('[VoiceService] TTS error: $e');
+
+      try {
+        await _tts.setLanguage(VoiceLanguage.english.speechLocaleId);
+        final retryResult = await _tts
+            .speak(cleaned)
+            .timeout(
+              Duration(seconds: timeoutSeconds),
+              onTimeout: () {
+                debugPrint('[VoiceService] TTS retry timeout');
+                _finishTts();
+                return null;
+              },
+            );
+
+        if (retryResult == 0 || retryResult == false) {
+          throw Exception('TTS retry refused to start.');
+        }
+
+        if (_ttsCompleter != null && !_ttsCompleter!.isCompleted) {
+          _finishTts();
+        }
+      } catch (retryError) {
+        debugPrint('[VoiceService] TTS retry error: $retryError');
+        _finishTts();
+      }
+    } finally {
+      _ttsCompleter = null;
+      _ttsActive = false;
+    }
+  }
+
+  String _speechSafeText(String text) {
+    return text
+        .replaceAll(RegExp(r'[`*_#>~]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  void _finishTts() {
+    _ttsActive = false;
+
+    final completer = _ttsCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
+
+    if (!_ttsSpokenEventEmitted) {
+      _ttsSpokenEventEmitted = true;
+      _emit(const VoiceEvent(type: 'spoken'));
+    }
   }
 
   Future<void> stopSpeaking() async {
     await _tts.stop();
+
+    if (_ttsActive || _ttsCompleter != null) {
+      _finishTts();
+    }
   }
 
   void _emitBufferedFinalIfNeeded() {
@@ -244,16 +361,16 @@ class VoiceService {
     if (buffered.isEmpty || _finalAlreadyEmitted) return;
 
     _finalAlreadyEmitted = true;
-    _events.add(
-      VoiceEvent(
-        type: 'final',
-        text: buffered,
-      ),
-    );
+    _emit(VoiceEvent(type: 'final', text: buffered));
   }
 
   Future<void> _prepareTts() async {
     await _tts.awaitSpeakCompletion(true);
+
+    try {
+      await _tts.setQueueMode(0);
+    } catch (_) {}
+
     await _tts.setSpeechRate(0.46);
     await _tts.setPitch(1.0);
     await _tts.setVolume(1.0);
@@ -330,6 +447,7 @@ class VoiceService {
   }
 
   void dispose() {
+    _disposed = true;
     unawaited(_speech.stop());
     unawaited(_speech.cancel());
     unawaited(_tts.stop());

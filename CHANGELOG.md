@@ -9,7 +9,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 - Initial public Android release of Lilly.
-- On-device Gemma 4 E4B inference through LiteRT-LM.
+- On-device Gemma 4 E2B inference through LiteRT-LM.
 - Voice conversation flow with speech-to-text and spoken replies.
 - Image-aware chat using camera and gallery input.
 - OCR fallback using ML Kit text recognition.

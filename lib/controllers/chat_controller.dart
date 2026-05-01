@@ -37,17 +37,20 @@ class ChatController extends ChangeNotifier {
   File? _selectedImage;
   String? _errorMessage;
   bool _stickToBottom = true;
+  bool _hasStreamingReply = false;
 
   ChatConversation? get conversation => _conversation;
   List<ChatMessage> get messages => _conversation?.messages ?? const [];
   File? get selectedImage => _selectedImage;
   bool get isSending => _modelController.isGenerating;
+  bool get hasStreamingReply => _hasStreamingReply;
   String? get errorMessage => _errorMessage ?? _modelController.errorMessage;
 
   void attachConversation(ChatConversation conversation) {
     _conversation = conversation;
     _selectedImage = null;
     _errorMessage = null;
+    _hasStreamingReply = false;
     notifyListeners();
     _scrollToBottomSoon(force: true);
   }
@@ -104,6 +107,7 @@ class ChatController extends ChangeNotifier {
     _conversation = workingConversation;
     _selectedImage = null;
     _errorMessage = null;
+    _hasStreamingReply = false;
     notifyListeners();
     _scrollToBottomSoon(force: true);
 
@@ -120,12 +124,16 @@ class ChatController extends ChangeNotifier {
               prompt: text,
               history: historySnapshot,
               imagePath: null,
+              conversationId: current.id,
             ),
+            onPartialText: _updateStreamingReply,
           )
         : await _generateImageAwareResponse(
             userText: text,
             image: image,
             history: historySnapshot,
+            conversationId: current.id,
+            onPartialText: _updateStreamingReply,
           );
 
     if (!result.success) {
@@ -140,12 +148,13 @@ class ChatController extends ChangeNotifier {
       );
 
       workingConversation = _conversation!.copyWith(
-        messages: [..._conversation!.messages, assistantError],
+        messages: _replaceOrAppendAssistantMessage(assistantError),
         updatedAt: DateTime.now(),
       );
 
       _conversation = workingConversation;
       _errorMessage = failureText;
+      _hasStreamingReply = false;
       notifyListeners();
       _scrollToBottomSoon();
       return workingConversation;
@@ -158,11 +167,12 @@ class ChatController extends ChangeNotifier {
     );
 
     final conversationWithReply = _conversation!.copyWith(
-      messages: [..._conversation!.messages, replyMessage],
+      messages: _replaceOrAppendAssistantMessage(replyMessage),
       updatedAt: DateTime.now(),
     );
 
     _conversation = conversationWithReply;
+    _hasStreamingReply = false;
     notifyListeners();
     _scrollToBottomSoon();
     return conversationWithReply;
@@ -172,16 +182,20 @@ class ChatController extends ChangeNotifier {
     required String userText,
     required File image,
     required List<ChatMessage> history,
+    required String conversationId,
+    required void Function(String text) onPartialText,
   }) async {
     final visionResult = await _modelController.generateResponse(
       ModelRequest(
         prompt: _buildVisionPrompt(userText: userText),
         history: history,
         imagePath: image.path,
+        conversationId: conversationId,
       ),
+      suppressError: true,
     );
 
-    if (visionResult.success) {
+    if (visionResult.success && visionResult.text.trim().isNotEmpty) {
       return visionResult;
     }
 
@@ -190,15 +204,15 @@ class ChatController extends ChangeNotifier {
         image.path,
       );
 
-      if (extractedText.isEmpty) {
+      if (extractedText.trim().isEmpty) {
         return ModelResult.failure(
           errorMessage:
               visionResult.errorMessage ??
-              'I could not find readable text in that image. Try a clearer photo with better lighting.',
+              'I could not process that image clearly. Try another photo with better lighting and framing.',
         );
       }
 
-      final fallbackResult = await _modelController.generateResponse(
+      return _modelController.generateResponse(
         ModelRequest(
           prompt: _buildPromptFromImageText(
             userText: userText,
@@ -206,22 +220,15 @@ class ChatController extends ChangeNotifier {
           ),
           history: history,
           imagePath: null,
+          conversationId: conversationId,
         ),
-      );
-
-      if (fallbackResult.success) {
-        return fallbackResult;
-      }
-
-      return ModelResult.failure(
-        errorMessage: fallbackResult.errorMessage ?? visionResult.errorMessage,
+        onPartialText: onPartialText,
       );
     } catch (e) {
       return ModelResult.failure(
-        errorMessage: _friendlyError(
-          visionResult.errorMessage ??
-              'Failed to read text from the selected image: $e',
-        ),
+        errorMessage:
+            visionResult.errorMessage ??
+            'I could not process that image clearly. Try another photo with better lighting and framing.',
       );
     }
   }
@@ -240,63 +247,61 @@ class ChatController extends ChangeNotifier {
     );
   }
 
-  String _buildVisionPrompt({
-    required String userText,
-  }) {
+  void _updateStreamingReply(String text) {
+    final current = _conversation;
+    if (current == null) return;
+
+    final cleanText = text.trim();
+    if (cleanText.isEmpty) return;
+
+    final streamingMessage = ChatMessage(
+      text: cleanText,
+      isUser: false,
+      createdAt: DateTime.now(),
+    );
+
+    _conversation = current.copyWith(
+      messages: _replaceOrAppendAssistantMessage(streamingMessage),
+      updatedAt: DateTime.now(),
+    );
+    _hasStreamingReply = true;
+    notifyListeners();
+    _scrollToBottomSoon();
+  }
+
+  List<ChatMessage> _replaceOrAppendAssistantMessage(ChatMessage message) {
+    final currentMessages = _conversation?.messages ?? const <ChatMessage>[];
+    if (_hasStreamingReply &&
+        currentMessages.isNotEmpty &&
+        !currentMessages.last.isUser) {
+      return [...currentMessages.take(currentMessages.length - 1), message];
+    }
+
+    return [...currentMessages, message];
+  }
+
+  String _buildVisionPrompt({required String userText}) {
     final cleanUserText = userText.trim();
-
-    if (cleanUserText.isEmpty) {
-      return '''
-      The user attached an image.
-      Describe the main object or scene briefly.
-      If readable text is visible, include the important parts.
-      If you are unsure, say so honestly.
-      ''';
-    }
-
-    if (VisualIntentService.asksToReadText(cleanUserText)) {
-      return '''
-      The user attached an image and wants help reading visible text.
-      Use the image as the source of truth.
-      Transcribe the important text first, then answer briefly.
-      If the text is unclear, say so clearly.
-
-      User request:
-      $cleanUserText
-      ''';
-    }
-
-    if (VisualIntentService.asksToIdentifyObject(cleanUserText)) {
-      return '''
-      The user attached an image and wants to know what the visible thing, object, or scene is.
-      Use the image as the primary source of truth.
-      Identify the main object or scene first in one short sentence.
-      Then add any important visible text or context.
-      If uncertain, say what it most likely is and why briefly.
-
-      User request:
-      $cleanUserText
-      ''';
-    }
-
-    if (VisualIntentService.asksToDescribeScene(cleanUserText)) {
-      return '''
-      The user attached an image and wants help with what is visible around them.
-      Answer using the image as the primary source of truth.
-      Describe the main scene briefly and include any important readable text.
-
-      User request:
-      $cleanUserText
-      ''';
-    }
+    final request = cleanUserText.isEmpty ? 'What is this?' : cleanUserText;
 
     return '''
-    The user attached an image.
-    Answer using the image as the primary context.
-    If the user's words are vague, briefly describe the image first and then answer.
+      You are Lilly using the attached image as the main source.
 
-    User request:
-    $cleanUserText
+      User request:
+      $request
+
+      ${_visionInstructionFor(request)}
+
+      Rules:
+      - Answer the user's actual request, not a generic template.
+      - Start with the direct answer.
+      - If the user asks what you can see, describe the visible scene or main objects first.
+      - If it is a product, identify object type, brand, product name, visible label text, and likely use.
+      - If it is a document, sign, menu, label, receipt, or screen, read the important visible text and explain it briefly.
+      - Never say "the text you provided".
+      - Never mention OCR, fallback, native vision, prompt, or model.
+      - If uncertain, say "It looks like..." and give the best likely answer.
+      - Be mature, natural, and concise.
     ''';
   }
 
@@ -305,88 +310,71 @@ class ChatController extends ChangeNotifier {
     required String extractedText,
   }) {
     final cleanUserText = userText.trim();
+    final request = cleanUserText.isEmpty ? 'What is this?' : cleanUserText;
     var cleanExtractedText = extractedText.trim();
 
     if (cleanExtractedText.length > _maxExtractedTextChars) {
-      cleanExtractedText =
-          cleanExtractedText.substring(0, _maxExtractedTextChars);
+      cleanExtractedText = cleanExtractedText.substring(
+        0,
+        _maxExtractedTextChars,
+      );
     }
 
-    if (VisualIntentService.asksToReadText(cleanUserText)) {
-      return '''
-      The user wants help reading visible text from an image.
-      You only have OCR text, not the pixels.
-      Read the important text first, then answer briefly.
-      If the OCR looks incomplete or noisy, say so clearly.
+    return '''
+      Internal context: direct image vision was unavailable, but readable visible text was found in the user's image.
+      Treat the text below as text seen in the image.
+      Do not reveal this internal context.
 
       User request:
-      $cleanUserText
+      $request
 
-      OCR text:
+      ${_visionInstructionFor(request)}
+
+      Visible text from the image:
       $cleanExtractedText
+
+      Rules:
+      - Never say "the text you provided".
+      - Never mention OCR, fallback, native vision, extracted text, prompt, or model.
+      - If the user asks what you can see, answer from the visible text clues naturally.
+      - If the text looks like a product label, infer the likely product, brand, object type, and use.
+      - If the text looks incomplete or noisy, say "It appears to be..." and give the best likely answer.
+      - Do not say "text is not enough" unless there is truly no useful clue.
+      - Keep the answer short and direct.
+    ''';
+  }
+
+  String _visionInstructionFor(String userText) {
+    if (VisualIntentService.asksToReadText(userText)) {
+      return '''
+        Task:
+        Read or summarize the important visible text.
+        If the user asks for a specific field like expiry, price, ingredients, address, or instructions, answer that first.
       ''';
     }
 
-    if (VisualIntentService.asksToIdentifyObject(cleanUserText)) {
+    if (VisualIntentService.asksToDescribeScene(userText)) {
       return '''
-      The user likely wants to identify an object or scene, but you only have OCR text from the image.
-      Use the OCR only to infer context when it is genuinely obvious.
-      If the OCR is not enough to identify the object, say clearly that text alone is not enough.
-
-      User request:
-      $cleanUserText
-
-      OCR text:
-      $cleanExtractedText
+        Task:
+        Describe what is visible in the image.
+        Mention the main objects, scene, people if any, readable text if useful, and any important context.
       ''';
     }
 
-    if (VisualIntentService.asksToDescribeScene(cleanUserText)) {
+    if (VisualIntentService.asksToIdentifyObject(userText)) {
       return '''
-      The user is asking about what is visible around them, but you only have OCR text from the image.
-      Summarize what the OCR suggests.
-      Do not invent visual details that are not supported by the text.
-
-      User request:
-      $cleanUserText
-
-      OCR text:
-      $cleanExtractedText
-      ''';
-    }
-
-    if (cleanUserText.isEmpty) {
-      return '''
-      The user attached an image.
-      You cannot inspect the pixels directly in this fallback path.
-      You only have OCR text extracted from the image.
-
-      Read the visible text and summarize the important parts.
-
-      OCR text:
-      $cleanExtractedText
+        Task:
+        Identify the main object or product.
+        Mention what it is, visible brand/name, label clues, and likely purpose.
       ''';
     }
 
     return '''
-    The user attached an image.
-    You cannot inspect the pixels directly in this fallback path.
-    You only have OCR text extracted from the image.
-    Answer using only that OCR text.
-    If the request cannot be answered from the readable text, say so clearly.
-
-    User request:
-    $cleanUserText
-
-    OCR text:
-    $cleanExtractedText
+      Task:
+      Use the image to answer the user's question directly.
+      Prefer concrete visual details over generic wording.
     ''';
   }
-
-  bool _looksLikeSceneIntent(String text) {
-    return VisualIntentService.shouldAutoCaptureForPrompt(text);
-  }
-
 
   String _friendlyError(String raw) {
     final message = raw.replaceFirst('Exception: ', '').trim();

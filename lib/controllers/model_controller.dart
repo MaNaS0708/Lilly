@@ -28,7 +28,7 @@ class ModelController extends ChangeNotifier {
 
   Future<void> initialize() async {
     if (_status == ModelStatus.ready) return;
-    
+
     if (_initFuture != null) {
       await _initFuture;
       return;
@@ -68,29 +68,42 @@ class ModelController extends ChangeNotifier {
     return isReady;
   }
 
-  Future<ModelResult> generateResponse(ModelRequest request) async {
+  Future<ModelResult> generateResponse(
+    ModelRequest request, {
+    void Function(String text)? onPartialText,
+    bool suppressError = false,
+  }) async {
     _isGenerating = true;
-    _errorMessage = null;
+    if (!suppressError) {
+      _errorMessage = null;
+    }
     notifyListeners();
 
     try {
-      final result = await _modelService.generateResponse(request);
+      final result = await _modelService.generateResponse(
+        request,
+        onPartialText: onPartialText,
+      );
 
-      if (!result.success) {
+      if (!result.success && !suppressError) {
         _errorMessage = result.errorMessage;
       }
 
       return result;
     } catch (e) {
-      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      final message = e.toString().replaceFirst('Exception: ', '');
+      if (!suppressError) {
+        _errorMessage = message;
+      }
       return ModelResult.failure(
-        errorMessage: _errorMessage ?? 'Failed to generate response.',
+        errorMessage: message,
       );
     } finally {
       _isGenerating = false;
       notifyListeners();
     }
   }
+
 
   Future<void> refreshStatus() async {
     try {

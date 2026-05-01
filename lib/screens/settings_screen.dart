@@ -104,7 +104,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _modelController?.shutdown();
     await _modelFileService.deleteAllModelArtifacts();
 
-
     if (!mounted) return;
 
     Navigator.of(
@@ -232,8 +231,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final modelError = _modelController?.errorMessage;
         final modelInfo = _modelInfo;
         final trigger = _triggerCapabilities;
-        final selectedLabel = VoiceLanguage.fromCode(_voiceLanguageCode).label;
-
         return Scaffold(
           appBar: AppBar(title: const Text('Settings')),
           body: ListView(
@@ -293,7 +290,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      value: _voiceLanguageCode,
+                      initialValue: _voiceLanguageCode,
                       decoration: InputDecoration(
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -471,7 +468,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       'Keep the trigger active, then say “Hey Lilly” to open Lilly directly in voice chat. While voice chat is running, the wake-word microphone pauses automatically and resumes after voice chat stops.',
                       style: TextStyle(color: Color(0xFF4B5563), height: 1.4),
                     ),
-                   if (_triggerBusy) ...[
+                    if (_triggerBusy) ...[
                       const SizedBox(height: 14),
                       const LinearProgressIndicator(),
                     ],
@@ -484,7 +481,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onLongPress: () async {
                     setState(() => _showDebugInfo = !_showDebugInfo);
                     await _settingsService.setShowDebugInfo(_showDebugInfo);
-                    if (mounted) {
+                    if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(

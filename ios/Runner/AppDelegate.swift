@@ -56,6 +56,12 @@ import UIKit
             "errorMessage": self.unsupportedMessage
           ])
 
+        case "generateResponseStream":
+          result([
+            "success": false,
+            "errorMessage": self.unsupportedMessage
+          ])
+
         default:
           result(FlutterMethodNotImplemented)
         }

@@ -51,8 +51,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _pausedTriggerForVoiceChat = false;
   bool _stoppingVoiceChat = false;
   bool _voiceSendInFlight = false;
+  bool _voiceReplyInProgress = false;
   bool _cameraCaptureInProgress = false;
-
 
   @override
   void initState() {
@@ -72,9 +72,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
 
-    if (_cameraCaptureInProgress) {
-      return;
-    }
+    if (_cameraCaptureInProgress) return;
 
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
@@ -88,7 +86,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-
   Future<void> _bootstrap() async {
     _enableImageInput = await _settingsService.getEnableImageInput();
     await _conversationListController.load();
@@ -97,8 +94,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     late final ChatConversation initialConversation;
 
     if (selected == null || selected.messages.isNotEmpty) {
-      initialConversation =
-          await _conversationListController.createNewConversation();
+      initialConversation = await _conversationListController
+          .createNewConversation();
     } else {
       initialConversation = selected;
     }
@@ -111,7 +108,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (mounted) {
       setState(() {});
     }
-    
   }
 
   Future<void> _vibrateInputStart() async {
@@ -152,7 +148,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _restartVoiceConversationLoop() async {
-    if (!_voiceConversationMode || !mounted) return;
+    if (!_voiceConversationMode ||
+        _stoppingVoiceChat ||
+        _voiceSendInFlight ||
+        _voiceReplyInProgress ||
+        !mounted) {
+      return;
+    }
 
     final restarted = await _startVoiceChat();
     if (!restarted && mounted) {
@@ -173,6 +175,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             _isVoicePreparing = false;
           });
           break;
+
         case 'listening':
           await _vibrateInputStart();
           setState(() {
@@ -181,6 +184,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             _isVoiceSpeaking = false;
           });
           break;
+
         case 'partial':
           final partial = (event.text ?? '').trim();
           if (partial.isNotEmpty) {
@@ -190,11 +194,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             );
           }
           break;
+
         case 'final':
           final transcript = (event.text ?? '').trim();
-          if (transcript.isEmpty || _voiceSendInFlight) {
-            return;
-          }
+          if (transcript.isEmpty || _voiceSendInFlight) return;
 
           _voiceSendInFlight = true;
           await _vibrateInputDone();
@@ -223,21 +226,44 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             await _sendMessage(speakReply: _voiceConversationMode);
           } finally {
             _voiceSendInFlight = false;
+            if (_voiceConversationMode &&
+                !_stoppingVoiceChat &&
+                !_voiceReplyInProgress &&
+                !_isVoiceListening &&
+                !_isVoicePreparing &&
+                !_isVoiceSpeaking &&
+                !_modelController.isGenerating) {
+              await Future<void>.delayed(const Duration(milliseconds: 300));
+              await _restartVoiceConversationLoop();
+            }
           }
           break;
+
         case 'stopped':
           setState(() {
             _isVoiceListening = false;
             _isVoicePreparing = false;
           });
+          if (_voiceConversationMode &&
+              !_stoppingVoiceChat &&
+              !_voiceSendInFlight &&
+              !_voiceReplyInProgress &&
+              !_isVoiceSpeaking &&
+              !_modelController.isGenerating) {
+            await Future<void>.delayed(const Duration(milliseconds: 300));
+            await _restartVoiceConversationLoop();
+          }
           break;
+
         case 'speaking':
           await _vibrateResponseStart();
           setState(() {
             _isVoiceSpeaking = true;
           });
           break;
+
         case 'spoken':
+          _voiceReplyInProgress = false;
           await _vibrateResponseDone();
           if (!mounted) return;
           setState(() {
@@ -245,6 +271,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           });
           if (_voiceConversationMode &&
               !_stoppingVoiceChat &&
+              !_voiceSendInFlight &&
+              !_voiceReplyInProgress &&
               !_isVoiceListening &&
               !_isVoicePreparing &&
               !_modelController.isGenerating) {
@@ -252,6 +280,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             await _restartVoiceConversationLoop();
           }
           break;
+
         case 'error':
           final shouldResumeTrigger = _voiceConversationMode;
           _voiceSendInFlight = false;
@@ -274,8 +303,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return VisualIntentService.shouldAutoCaptureForPrompt(transcript);
   }
 
-
-    Future<void> _captureAndProcessVisibleText(String transcript) async {
+  Future<void> _captureAndProcessVisibleText(String transcript) async {
     if (!_enableImageInput) {
       _chatController.showError('Image input is disabled in settings.');
       return;
@@ -301,7 +329,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-
   Future<void> _consumePendingTriggerAction() async {
     final action = await _triggerService.consumePendingLaunchAction();
     if (!mounted || action == null) return;
@@ -323,7 +350,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (_voiceConversationMode ||
         _isVoicePreparing ||
         _isVoiceListening ||
-        _voiceSendInFlight) {
+        _isVoiceSpeaking ||
+        _stoppingVoiceChat ||
+        _voiceSendInFlight ||
+        _voiceReplyInProgress) {
       return;
     }
 
@@ -345,10 +375,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<bool> _startVoiceChat() async {
-    if (_isVoicePreparing || _isVoiceListening || _voiceSendInFlight) {
+    if (_isVoicePreparing ||
+        _isVoiceListening ||
+        _isVoiceSpeaking ||
+        _voiceSendInFlight ||
+        _voiceReplyInProgress) {
       return true;
     }
 
+    if (!mounted) return false;
     setState(() {
       _isVoicePreparing = true;
     });
@@ -383,6 +418,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     _stoppingVoiceChat = true;
     _voiceSendInFlight = false;
+    _voiceReplyInProgress = false;
     if (mounted) {
       setState(() {
         _isVoiceListening = false;
@@ -392,10 +428,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       });
     }
 
-    await _voiceService.stopListening(clearBufferedText: true);
-    await _voiceService.stopSpeaking();
-    await _resumeWakeWordAfterVoiceChat();
-    _stoppingVoiceChat = false;
+    try {
+      await _voiceService.stopListening(clearBufferedText: true);
+      await _voiceService.stopSpeaking();
+      await _resumeWakeWordAfterVoiceChat();
+    } finally {
+      _stoppingVoiceChat = false;
+    }
   }
 
   @override
@@ -414,9 +453,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  Future<File?> _openInAppCamera({
-    required bool autoCaptureOnOpen,
-  }) async {
+  Future<File?> _openInAppCamera({required bool autoCaptureOnOpen}) async {
     _cameraCaptureInProgress = true;
 
     try {
@@ -510,7 +547,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-    Future<bool> _sendMessage({bool speakReply = false}) async {
+  Future<bool> _sendMessage({bool speakReply = false}) async {
     final text = _textController.text.trim();
     final hasImage = _chatController.selectedImage != null;
 
@@ -564,16 +601,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
 
     if (speakReply && lastMessage != null && !lastMessage.isUser) {
-      await _voiceService.speakReply(lastMessage.text);
+      _voiceReplyInProgress = true;
+      try {
+        await _voiceService.speakReply(lastMessage.text);
+      } catch (e) {
+        _chatController.showError(e.toString().replaceFirst('Exception: ', ''));
+        return false;
+      } finally {
+        _voiceReplyInProgress = false;
+
+        if (speakReply &&
+            _voiceConversationMode &&
+            !_stoppingVoiceChat &&
+            !_voiceSendInFlight &&
+            mounted) {
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+          await _restartVoiceConversationLoop();
+        }
+      }
     }
 
     return true;
   }
 
-
   Future<void> _createNewChat() async {
-    final conversation =
-        await _conversationListController.createNewConversation();
+    final conversation = await _conversationListController
+        .createNewConversation();
     _chatController.attachConversation(conversation);
 
     if (!mounted) return;
@@ -747,7 +800,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   child: MessageList(
                     messages: _chatController.messages,
                     scrollController: _chatController.scrollController,
-                    isLoading: isBusy,
+                    isLoading: isBusy && !_chatController.hasStreamingReply,
                     loadingLabel: _loadingLabel(),
                     isModelLoading: _modelController.isLoading,
                     modelStatusLabel: _modelController.isLoading
@@ -761,7 +814,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   isSending: isBusy,
                   onPickImage: _showImageSourceSheet,
                   onRemoveImage: _chatController.removeSelectedImage,
-                  onSend: () => _sendMessage(speakReply: _voiceConversationMode),
+                  onSend: () =>
+                      _sendMessage(speakReply: _voiceConversationMode),
                 ),
               ],
             ),
