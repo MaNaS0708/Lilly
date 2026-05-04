@@ -77,7 +77,7 @@ Lilly includes local setup, validation, reload, and delete controls so the model
 
 | Response | Settings |
 |---|---|
-| ![Lilly response example](docs/screenshots/ResponseQuestion2.jpg) | ![Lilly settings screen](docs/screenshots/Settings-1.jpg) |
+| ![Lilly response example](docs/screenshots/ResponseQuestion2.jpg) | ![Lilly settings screen](docs/screenshots/Settings-1.jpeg) |
 
 ---
 
