@@ -1,14 +1,14 @@
 class VisualIntentService {
   static final RegExp _deicticPattern = RegExp(
-    r"\b(this|that|these|those|here|there|it|this one|that one)\b",
+    r"\b(this|that|these|those|here|there|it|this one|that one|in front of me|near me|around me|in my hand|i am holding)\b",
   );
 
   static final RegExp _visualVerbPattern = RegExp(
-    r"\b(see|seeing|look|looking|identify|describe|read|scan|show|recognize|detect|check|visible|watch|notice)\b",
+    r"\b(see|seeing|look|looking|identify|describe|read|scan|show|recognize|detect|check|visible|watch|notice|tell|find|name)\b",
   );
 
   static final RegExp _visualNounPattern = RegExp(
-    r"\b(image|picture|photo|camera|scene|view|surroundings|sign|label|text|menu|board|screen|document|paper|note|book|receipt|package|packet|object|thing|item|bottle|box|can|refill|product|brand|room|place)\b",
+    r"\b(image|picture|photo|camera|scene|view|surroundings|sign|label|text|menu|board|screen|document|paper|note|book|receipt|package|packet|object|thing|item|bottle|box|can|refill|product|brand|room|place|tree|plant|flower|leaf|fruit|vegetable|animal|bird|insect|bug|person|face|building|vehicle|medicine|tablet|food|dish)\b",
   );
 
   static final RegExp _nearMePattern = RegExp(
@@ -18,29 +18,26 @@ class VisualIntentService {
   static final List<RegExp> _readPatterns = [
     RegExp(r"\bwhat does (this|that|it|the label|the sign|the text) say\b"),
     RegExp(r"\bwhat is written\b"),
-    RegExp(
-      r"\b(read|scan|ocr|transcribe|extract) (this|that|it|the text|the label|the sign|the document|the screen)?\b",
-    ),
-    RegExp(
-      r"\b(read|scan|tell me) .* (text|label|sign|menu|receipt|document|expiry|price|ingredients)\b",
-    ),
-    RegExp(
-      r"\b(expiry|price|ingredients|address|phone number|date|menu|instructions)\b",
-    ),
+    RegExp(r"\b(read|scan|ocr|transcribe|extract) (this|that|it|the text|the label|the sign|the document|the screen)?\b"),
+    RegExp(r"\b(read|scan|tell me) .* (text|label|sign|menu|receipt|document|expiry|price|ingredients)\b"),
+    RegExp(r"\b(expiry|price|ingredients|address|phone number|date|menu|instructions)\b"),
   ];
 
   static final List<RegExp> _identifyPatterns = [
     RegExp(r"\bwhat('?s| is) (this|that|it|this one|that one)\b"),
+    RegExp(r"\bwhat (tree|plant|flower|leaf|fruit|vegetable|animal|bird|insect|bug|product|medicine|tablet|food|dish|vehicle|building) is (this|that|it)\b"),
+    RegExp(r"\bwhich (tree|plant|flower|animal|bird|product|medicine|vehicle) is (this|that|it)\b"),
+    RegExp(r"\bwhat (kind|type|species|breed) of (tree|plant|flower|animal|bird|insect|bug|product|medicine|food) is (this|that|it)\b"),
     RegExp(r"\btell me what (this|that|it|this one|that one) is\b"),
-    RegExp(
-      r"\bidentify (this|that|it|this one|that one|the object|the product)\b",
-    ),
+    RegExp(r"\bidentify (this|that|it|this one|that one|the object|the product|the plant|the tree|the animal)\b"),
     RegExp(r"\bwhat am i (looking at|holding)\b"),
     RegExp(r"\bwhat product is this\b"),
     RegExp(r"\bwhich brand is this\b"),
     RegExp(r"\bcan you identify\b"),
     RegExp(r"\bye kya hai\b"),
     RegExp(r"\bkya hai ye\b"),
+    RegExp(r"\bye konsa\b"),
+    RegExp(r"\bye kaunsa\b"),
   ];
 
   static final List<RegExp> _scenePatterns = [
@@ -50,17 +47,11 @@ class VisualIntentService {
     RegExp(r"\btell me what you see\b"),
     RegExp(r"\bwhat is visible\b"),
     RegExp(r"\bwhat('?s| is) visible\b"),
-    RegExp(
-      r"\bwhat('?s| is) in (this|the) (image|picture|photo|camera|scene|view)\b",
-    ),
+    RegExp(r"\bwhat('?s| is) in (this|the) (image|picture|photo|camera|scene|view)\b"),
     RegExp(r"\bwhat('?s| is) in front of me\b"),
-    RegExp(
-      r"\bdescribe (this|that|it|the image|the picture|the photo|the scene|what you see)\b",
-    ),
+    RegExp(r"\bdescribe (this|that|it|the image|the picture|the photo|the scene|what you see)\b"),
     RegExp(r"\blook at (this|that|it|the image|the camera)\b"),
-    RegExp(
-      r"\b(in front of me|around me|near me|ahead of me|beside me|next to me)\b",
-    ),
+    RegExp(r"\b(in front of me|around me|near me|ahead of me|beside me|next to me)\b"),
     RegExp(r"\bkya dikh raha\b"),
     RegExp(r"\bkya dikh rha\b"),
   ];

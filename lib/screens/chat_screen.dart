@@ -244,6 +244,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             _isVoiceListening = false;
             _isVoicePreparing = false;
           });
+
           if (_voiceConversationMode &&
               !_stoppingVoiceChat &&
               !_voiceSendInFlight &&
@@ -251,7 +252,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               !_isVoiceSpeaking &&
               !_modelController.isGenerating) {
             await Future<void>.delayed(const Duration(milliseconds: 300));
-            await _restartVoiceConversationLoop();
+            await _stopVoiceChat();
           }
           break;
 

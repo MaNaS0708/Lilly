@@ -8,7 +8,7 @@ class ModelSetupConstants {
 
   static const String modelFileName = 'gemma-4-E2B-it.litertlm';
   static const String modelUrl =
-      'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm?download=true';
+    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/6e5c4f1e395deb959c494953478fa5cec4b8008f/gemma-4-E2B-it.litertlm?download=true';
   static const String modelCardUrl =
       'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm';
 

@@ -113,17 +113,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _setVoiceLanguage(String code) async {
     await _settingsService.setPrimaryVoiceLanguageCode(code);
-    await _modelController?.shutdown();
 
     if (!mounted) return;
+
+    final language = VoiceLanguage.fromCode(code);
 
     setState(() {
       _voiceLanguageCode = code;
     });
 
-    Navigator.of(
-      context,
-    ).pushNamedAndRemoveUntil(SplashScreen.routeName, (route) => false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Speech language changed to ${language.label}.'),
+      ),
+    );
   }
 
   Future<bool> _ensureTriggerPermissions() async {
